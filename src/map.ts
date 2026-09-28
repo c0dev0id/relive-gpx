@@ -78,7 +78,10 @@ export class ReplayMap {
   readonly map: maplibregl.Map;
   private track: Track | null = null;
   private coords: [number, number][] = [];
-  private commitIdx = 0;
+  // liveIdx: last committed index whose async setData is guaranteed applied.
+  // pendingIdx: last committed index whose setData may still be in flight.
+  private liveIdx = 0;
+  private pendingIdx = 0;
   private ready = false;
   private smoothedBearing = 0;
   private smoothLon = 0;
@@ -119,7 +122,8 @@ export class ReplayMap {
   private installTrack(track: Track) {
     const coords = track.points.map((p) => [p.lon, p.lat] as [number, number]);
     this.coords = coords;
-    this.commitIdx = 0;
+    this.liveIdx = 0;
+    this.pendingIdx = 0;
     const geojson = lineFeature(coords);
     const start = lineFeature([coords[0]]);
 
@@ -144,8 +148,10 @@ export class ReplayMap {
       // the two can't drift apart. It is split to avoid re-parsing the whole
       // (growing) line every frame: "trail" holds the committed history and is
       // rebuilt only once per COMMIT_STRIDE points; "trail-tip" is the short
-      // active drag-line from the last committed vertex to the rider, redrawn
-      // every frame. Between commits the committed line is never touched.
+      // active drag-line from the last known-applied committed vertex to the
+      // rider, redrawn every frame. The tip starts one commit generation back
+      // so it always overlaps the committed line even while a commit's async
+      // setData is still in flight — otherwise a stride-sized gap would appear.
       this.map.addSource("trail", { type: "geojson", data: start });
       this.map.addLayer({
         id: "trail",
@@ -188,19 +194,27 @@ export class ReplayMap {
     const head: [number, number] = [sample.lon, sample.lat];
 
     // Fixate the committed line when the active segment has grown a full stride,
-    // or when seeking backwards past the last commit. This is the only time the
-    // growing line is re-parsed — a few hundred times over a whole ride, not
-    // thousands of times per second.
-    if (idx < this.commitIdx || idx - this.commitIdx >= COMMIT_STRIDE) {
-      this.commitIdx = idx;
+    // or resync on a backward seek. This is the only time the growing line is
+    // re-parsed — a few hundred times over a whole ride, not per frame.
+    if (idx - this.pendingIdx >= COMMIT_STRIDE) {
+      // A full stride has been drawn since the last commit, so that commit's
+      // setData is certainly applied: promote it to the live floor before
+      // issuing the next (still in-flight) commit.
+      this.liveIdx = this.pendingIdx;
+      this.pendingIdx = idx;
+      const trail = this.map.getSource("trail") as maplibregl.GeoJSONSource | undefined;
+      trail?.setData(lineFeature(this.coords.slice(0, idx + 1)));
+    } else if (idx < this.pendingIdx) {
+      this.liveIdx = idx;
+      this.pendingIdx = idx;
       const trail = this.map.getSource("trail") as maplibregl.GeoJSONSource | undefined;
       trail?.setData(lineFeature(this.coords.slice(0, idx + 1)));
     }
-    // Active drag-line: the last committed vertex, along the traveled vertices,
-    // to the rider's interpolated position. Shares the committed line's last
-    // vertex, so the two join seamlessly. Bounded to ~COMMIT_STRIDE points.
+    // Active drag-line: from the last known-applied committed vertex, along the
+    // traveled vertices, to the rider. Starting at liveIdx (one commit back)
+    // guarantees overlap with the live committed line. Bounded to ~2 strides.
     const tip = this.map.getSource("trail-tip") as maplibregl.GeoJSONSource | undefined;
-    tip?.setData(lineFeature([...this.coords.slice(this.commitIdx, idx + 1), head]));
+    tip?.setData(lineFeature([...this.coords.slice(this.liveIdx, idx + 1), head]));
 
     if (this.follow) {
       // Low-pass both bearing and center so the chase camera drifts rather than
