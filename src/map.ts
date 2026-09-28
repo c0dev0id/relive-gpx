@@ -1,10 +1,10 @@
 // MapLibre 3D map: satellite imagery draped over DEM terrain, the full route
-// as a dim line, a bright trail revealed via line-trim-offset, a rider marker,
-// and an optional slow-follow chase camera.
+// as a dim line, a bright trail built from the traveled coordinates, a DOM
+// rider marker, and an optional slow-follow chase camera.
 
 import maplibregl from "maplibre-gl";
 import type { StyleSpecification } from "maplibre-gl";
-import type { Feature, LineString, Point } from "geojson";
+import type { Feature, LineString } from "geojson";
 import { config } from "./config";
 import type { Track, Sample } from "./gpx";
 
@@ -41,28 +41,24 @@ function buildStyle(): StyleSpecification {
   };
 }
 
-// A north-pointing arrow drawn on a canvas, used as the rider symbol icon.
-// Rendered on the map (not as a DOM marker) so it sits on the same terrain
-// surface as the trail — otherwise, under pitch, the two appear offset.
-function makeArrowImage(size = 64): ImageData {
-  const c = document.createElement("canvas");
-  c.width = c.height = size;
-  const ctx = c.getContext("2d")!;
-  const s = size;
-  ctx.translate(s / 2, s / 2);
-  ctx.beginPath();
-  ctx.moveTo(0, -s * 0.4); // tip (points up = north)
-  ctx.lineTo(s * 0.28, s * 0.34);
-  ctx.lineTo(0, s * 0.16); // rear notch, chevron shape
-  ctx.lineTo(-s * 0.28, s * 0.34);
-  ctx.closePath();
-  ctx.fillStyle = "#ff3b30";
-  ctx.strokeStyle = "rgba(255,255,255,0.95)";
-  ctx.lineWidth = s * 0.05;
-  ctx.lineJoin = "round";
-  ctx.fill();
-  ctx.stroke();
-  return ctx.getImageData(0, 0, s, s);
+// The rider marker: a halo + north-pointing chevron as an SVG DOM element.
+// A DOM marker (not a symbol layer) is used because symbol placement is
+// recomputed on a throttle, so a symbol moved every frame renders in visible
+// steps; a marker updates its CSS transform on every map move, i.e. smoothly.
+// With terrain enabled MapLibre projects the marker onto the terrain surface,
+// so it stays aligned with the trail under pitch.
+function makeRiderElement(): HTMLElement {
+  const el = document.createElement("div");
+  el.style.pointerEvents = "none";
+  el.style.width = el.style.height = "44px";
+  el.innerHTML = `
+    <svg width="44" height="44" viewBox="0 0 64 64">
+      <circle cx="32" cy="32" r="15" fill="rgba(255,59,48,0.25)"/>
+      <path d="M32 6.4 L49.9 53.8 L32 42.2 L14.1 53.8 Z"
+            fill="#ff3b30" stroke="rgba(255,255,255,0.95)"
+            stroke-width="3" stroke-linejoin="round"/>
+    </svg>`;
+  return el;
 }
 
 function lineFeature(coords: [number, number][]): Feature<LineString> {
@@ -80,6 +76,9 @@ export class ReplayMap {
   private lastIdx = -1;
   private ready = false;
   private smoothedBearing = 0;
+  private smoothLon = 0;
+  private smoothLat = 0;
+  private rider: maplibregl.Marker;
   follow = true;
 
   constructor(container: HTMLElement) {
@@ -94,20 +93,17 @@ export class ReplayMap {
     });
     this.map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right");
 
+    this.rider = new maplibregl.Marker({
+      element: makeRiderElement(),
+      rotationAlignment: "map",
+      pitchAlignment: "map",
+      subpixelPositioning: true,
+    });
+
     this.map.on("load", () => {
       this.ready = true;
-      // pixelRatio 2 => 64px canvas renders at 32 CSS px base size.
-      this.map.addImage("rider-arrow", makeArrowImage(), { pixelRatio: 2 });
       if (this.track) this.installTrack(this.track);
     });
-  }
-
-  private riderFeature(lon: number, lat: number, bearing: number): Feature<Point> {
-    return {
-      type: "Feature",
-      properties: { bearing },
-      geometry: { type: "Point", coordinates: [lon, lat] },
-    };
   }
 
   setTrack(track: Track) {
@@ -162,36 +158,10 @@ export class ReplayMap {
     }
 
     const p0 = track.points[0];
-    const riderData = this.riderFeature(p0.lon, p0.lat, p0.heading);
-    if (this.map.getSource("rider")) {
-      (this.map.getSource("rider") as maplibregl.GeoJSONSource).setData(riderData);
-    } else {
-      this.map.addSource("rider", { type: "geojson", data: riderData });
-      this.map.addLayer({
-        id: "rider-halo",
-        type: "circle",
-        source: "rider",
-        paint: {
-          "circle-radius": 9,
-          "circle-color": "#ff3b30",
-          "circle-opacity": 0.25,
-        },
-      });
-      this.map.addLayer({
-        id: "rider",
-        type: "symbol",
-        source: "rider",
-        layout: {
-          "icon-image": "rider-arrow",
-          "icon-size": 1.15,
-          "icon-rotate": ["get", "bearing"],
-          "icon-rotation-alignment": "map",
-          "icon-allow-overlap": true,
-          "icon-ignore-placement": true,
-        },
-      });
-    }
+    this.rider.setLngLat([p0.lon, p0.lat]).setRotation(p0.heading).addTo(this.map);
     this.smoothedBearing = p0.heading;
+    this.smoothLon = p0.lon;
+    this.smoothLat = p0.lat;
 
     this.map.fitBounds(track.bounds, {
       padding: 80,
@@ -205,8 +175,7 @@ export class ReplayMap {
   update(sample: Sample) {
     if (!this.ready || !this.track) return;
 
-    const rider = this.map.getSource("rider") as maplibregl.GeoJSONSource | undefined;
-    rider?.setData(this.riderFeature(sample.lon, sample.lat, sample.heading));
+    this.rider.setLngLat([sample.lon, sample.lat]).setRotation(sample.heading);
 
     const idx = sample.index;
     if (idx !== this.lastIdx) {
@@ -214,16 +183,24 @@ export class ReplayMap {
       const trail = this.map.getSource("trail") as maplibregl.GeoJSONSource | undefined;
       trail?.setData(lineFeature(this.coords.slice(0, idx + 1)));
     }
+    // Redraw the last few traveled edges plus the interpolated head every frame.
+    // Overlapping the bulk trail hides any lag from its (larger) async reparse,
+    // so no gap appears at high zoom while the bulk catches up.
+    const from = Math.max(0, idx - 4);
     const tip = this.map.getSource("trail-tip") as maplibregl.GeoJSONSource | undefined;
-    tip?.setData(lineFeature([this.coords[idx], [sample.lon, sample.lat]]));
+    tip?.setData(
+      lineFeature([...this.coords.slice(from, idx + 1), [sample.lon, sample.lat]]),
+    );
 
     if (this.follow) {
-      // Low-pass the bearing so the chase camera swings gently.
-      const target = sample.heading;
-      let diff = ((target - this.smoothedBearing + 540) % 360) - 180;
-      this.smoothedBearing = (this.smoothedBearing + diff * 0.08 + 360) % 360;
+      // Low-pass both bearing and center so the chase camera drifts rather than
+      // locking on: a gentle suggestion of a follow, not a rigid one.
+      const diff = ((sample.heading - this.smoothedBearing + 540) % 360) - 180;
+      this.smoothedBearing = (this.smoothedBearing + diff * 0.02 + 360) % 360;
+      this.smoothLon += (sample.lon - this.smoothLon) * 0.12;
+      this.smoothLat += (sample.lat - this.smoothLat) * 0.12;
       this.map.jumpTo({
-        center: [sample.lon, sample.lat],
+        center: [this.smoothLon, this.smoothLat],
         bearing: this.smoothedBearing,
         pitch: 62,
         zoom: Math.max(this.map.getZoom(), 15),
@@ -239,6 +216,7 @@ export class ReplayMap {
   }
 
   destroy() {
+    this.rider.remove();
     this.map.remove();
   }
 }
