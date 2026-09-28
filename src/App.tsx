@@ -103,6 +103,35 @@ export default function App() {
   });
 
   const speeds = [1, 2, 4, 8];
+  const SEEK_STEP = 5; // seconds per arrow-key nudge
+
+  onMount(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!pb.track()) return;
+      // Let focused form controls keep their native key behavior (the scrubber
+      // seeks with arrows, buttons activate with space) instead of firing twice.
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        tag === "BUTTON"
+      )
+        return;
+      if (e.key === " ") {
+        e.preventDefault();
+        pb.toggle();
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        pb.seek(pb.time() - SEEK_STEP);
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        pb.seek(pb.time() + SEEK_STEP);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    onCleanup(() => window.removeEventListener("keydown", onKey));
+  });
 
   return (
     <div class="app">
