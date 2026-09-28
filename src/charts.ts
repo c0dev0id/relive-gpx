@@ -88,26 +88,34 @@ export function speedChart(
   return chartHandle(u, getTimeSec);
 }
 
+// Below this the rider is stopped or maneuvering, not riding. Those samples
+// form a huge stationary mass at ~0 that would dwarf the riding-speed spread,
+// so the histogram covers moving speeds only.
+const MOVING_MIN_KMH = 5;
+
 export function speedHistogram(track: Track, w: number, h: number): Chart {
-  const speeds = track.points.map((p) => mpsToKmh(p.speed));
-  // Derive the axis from the 99th percentile, not the max: a single GPS glitch
-  // can spike speedMax to thousands of km/h and squash all real data into the
-  // first bin. Speeds above the axis clamp into the top bin below.
+  const speeds = track.points
+    .map((p) => mpsToKmh(p.speed))
+    .filter((v) => v >= MOVING_MIN_KMH);
+  // Cap the axis at the 99th percentile, not the max: a single GPS glitch can
+  // spike speedMax to thousands of km/h and squash all real data into one bin.
+  // Speeds outside [MOVING_MIN_KMH, maxV] clamp into the end bins below.
   const sorted = [...speeds].sort((a, b) => a - b);
-  const p99 = sorted[Math.floor((sorted.length - 1) * 0.99)] ?? 0;
-  const maxV = Math.max(10, Math.ceil(p99));
-  const binCount = Math.min(24, Math.max(8, Math.round(maxV / 5)));
-  const binSize = maxV / binCount;
+  const p99 = sorted[Math.floor((sorted.length - 1) * 0.99)] ?? MOVING_MIN_KMH;
+  const maxV = Math.max(MOVING_MIN_KMH + 10, Math.ceil(p99));
+  const span = maxV - MOVING_MIN_KMH;
+  const binCount = Math.min(24, Math.max(8, Math.round(span / 5)));
+  const binSize = span / binCount;
   const bins = new Array(binCount).fill(0);
   for (const v of speeds) {
-    const b = Math.min(binCount - 1, Math.floor(v / binSize));
+    const b = Math.min(binCount - 1, Math.floor((v - MOVING_MIN_KMH) / binSize));
     bins[b] += 1;
   }
-  const centers = bins.map((_, i) => (i + 0.5) * binSize);
+  const centers = bins.map((_, i) => MOVING_MIN_KMH + (i + 0.5) * binSize);
   const opts: uPlot.Options = {
     width: w,
     height: h,
-    title: "Speed distribution (km/h)",
+    title: "Moving speed distribution (km/h)",
     cursor: { show: false },
     legend: { show: false },
     scales: { x: { time: false } },
