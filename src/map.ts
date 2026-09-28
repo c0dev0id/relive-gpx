@@ -61,6 +61,11 @@ function makeRiderElement(): HTMLElement {
   return el;
 }
 
+// How many traveled points the active drag-line may hold before its geometry is
+// folded into the committed trail. Larger = fewer (but bigger) committed
+// re-parses and a longer per-frame active line; both are cheap at this size.
+const COMMIT_STRIDE = 512;
+
 function lineFeature(coords: [number, number][]): Feature<LineString> {
   return {
     type: "Feature",
@@ -73,7 +78,7 @@ export class ReplayMap {
   readonly map: maplibregl.Map;
   private track: Track | null = null;
   private coords: [number, number][] = [];
-  private lastIdx = -1;
+  private commitIdx = 0;
   private ready = false;
   private smoothedBearing = 0;
   private smoothLon = 0;
@@ -114,7 +119,7 @@ export class ReplayMap {
   private installTrack(track: Track) {
     const coords = track.points.map((p) => [p.lon, p.lat] as [number, number]);
     this.coords = coords;
-    this.lastIdx = -1;
+    this.commitIdx = 0;
     const geojson = lineFeature(coords);
     const start = lineFeature([coords[0]]);
 
@@ -135,10 +140,12 @@ export class ReplayMap {
           "line-opacity": 0.35,
         },
       });
-      // Trail is built from the same coordinates as the rider marker, so the
-      // two can't drift apart. The bulk trail (traveled vertices) is only
-      // re-sliced when the point index changes; the short tip segment bridges
-      // that last vertex to the rider's interpolated position every frame.
+      // The trail is drawn from the same coordinates as the rider marker, so
+      // the two can't drift apart. It is split to avoid re-parsing the whole
+      // (growing) line every frame: "trail" holds the committed history and is
+      // rebuilt only once per COMMIT_STRIDE points; "trail-tip" is the short
+      // active drag-line from the last committed vertex to the rider, redrawn
+      // every frame. Between commits the committed line is never touched.
       this.map.addSource("trail", { type: "geojson", data: start });
       this.map.addLayer({
         id: "trail",
@@ -178,19 +185,22 @@ export class ReplayMap {
     this.rider.setLngLat([sample.lon, sample.lat]).setRotation(sample.heading);
 
     const idx = sample.index;
-    if (idx !== this.lastIdx) {
-      this.lastIdx = idx;
+    const head: [number, number] = [sample.lon, sample.lat];
+
+    // Fixate the committed line when the active segment has grown a full stride,
+    // or when seeking backwards past the last commit. This is the only time the
+    // growing line is re-parsed — a few hundred times over a whole ride, not
+    // thousands of times per second.
+    if (idx < this.commitIdx || idx - this.commitIdx >= COMMIT_STRIDE) {
+      this.commitIdx = idx;
       const trail = this.map.getSource("trail") as maplibregl.GeoJSONSource | undefined;
       trail?.setData(lineFeature(this.coords.slice(0, idx + 1)));
     }
-    // Redraw the last few traveled edges plus the interpolated head every frame.
-    // Overlapping the bulk trail hides any lag from its (larger) async reparse,
-    // so no gap appears at high zoom while the bulk catches up.
-    const from = Math.max(0, idx - 4);
+    // Active drag-line: the last committed vertex, along the traveled vertices,
+    // to the rider's interpolated position. Shares the committed line's last
+    // vertex, so the two join seamlessly. Bounded to ~COMMIT_STRIDE points.
     const tip = this.map.getSource("trail-tip") as maplibregl.GeoJSONSource | undefined;
-    tip?.setData(
-      lineFeature([...this.coords.slice(from, idx + 1), [sample.lon, sample.lat]]),
-    );
+    tip?.setData(lineFeature([...this.coords.slice(this.commitIdx, idx + 1), head]));
 
     if (this.follow) {
       // Low-pass both bearing and center so the chase camera drifts rather than
