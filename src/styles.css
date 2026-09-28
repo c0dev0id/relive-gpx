@@ -127,6 +127,46 @@ body,
   font-size: 1rem;
 }
 
+/* Speed legend ----------------------------------------------------------- */
+.legend {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 10;
+  width: 180px;
+  padding: 12px 14px;
+  background: var(--panel);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+.legend-title {
+  display: block;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.legend-bar {
+  height: 10px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+}
+.legend-ticks {
+  position: relative;
+  height: 1.1em;
+  margin-top: 4px;
+}
+.legend-tick {
+  position: absolute;
+  top: 0;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
 /* Charts ----------------------------------------------------------------- */
 .charts {
   position: absolute;

@@ -9,6 +9,7 @@ import {
   type Chart,
 } from "./charts";
 import { fmtDist, fmtSpeed, fmtTime } from "./format";
+import { config } from "./config";
 
 export default function App() {
   const pb = createPlayback();
@@ -104,6 +105,18 @@ export default function App() {
 
   const speeds = [1, 2, 4, 8];
   const SEEK_STEP = 5; // seconds per arrow-key nudge
+
+  // Speed legend, derived from the same stops that color the trail so the two
+  // can't drift. Positions map each stop's speed across [lo, hi]; the ends
+  // carry ≤/≥ because speeds outside the range clamp to the end colors.
+  const stops = config.speedColorStops;
+  const legendLo = stops[0].kmh;
+  const legendHi = stops[stops.length - 1].kmh;
+  const legendSpan = legendHi - legendLo || 1;
+  const legendPct = (kmh: number) => ((kmh - legendLo) / legendSpan) * 100;
+  const legendGradient = `linear-gradient(to right, ${stops
+    .map((s) => `${s.color} ${legendPct(s.kmh)}%`)
+    .join(", ")})`;
 
   onMount(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -217,6 +230,33 @@ export default function App() {
                     <span class="val">{Math.round(sample()!.power!)} W</span>
                   </div>
                 </Show>
+              </div>
+
+              <div class="legend">
+                <span class="legend-title">Speed (km/h)</span>
+                <div class="legend-bar" style={{ background: legendGradient }} />
+                <div class="legend-ticks">
+                  {stops.map((s, i) => (
+                    <span
+                      class="legend-tick"
+                      style={{
+                        left: `${legendPct(s.kmh)}%`,
+                        transform:
+                          i === 0
+                            ? "translateX(0)"
+                            : i === stops.length - 1
+                              ? "translateX(-100%)"
+                              : "translateX(-50%)",
+                      }}
+                    >
+                      {i === 0
+                        ? `≤${s.kmh}`
+                        : i === stops.length - 1
+                          ? `≥${s.kmh}`
+                          : s.kmh}
+                    </span>
+                  ))}
+                </div>
               </div>
 
               <div class="charts" ref={chartsContainer} />
