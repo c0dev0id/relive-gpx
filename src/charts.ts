@@ -17,29 +17,6 @@ function baseAxis(): uPlot.Axis {
   };
 }
 
-// A vertical cursor line the caller moves as playback progresses.
-function cursorPlugin(getX: () => number): uPlot.Plugin {
-  return {
-    hooks: {
-      draw: (u) => {
-        const x = getX();
-        if (x == null || !Number.isFinite(x)) return;
-        const left = u.valToPos(x, "x", true);
-        if (left < u.bbox.left || left > u.bbox.left + u.bbox.width) return;
-        const { ctx } = u;
-        ctx.save();
-        ctx.beginPath();
-        ctx.strokeStyle = "#ffd60a";
-        ctx.lineWidth = 1.5;
-        ctx.moveTo(left, u.bbox.top);
-        ctx.lineTo(left, u.bbox.top + u.bbox.height);
-        ctx.stroke();
-        ctx.restore();
-      },
-    },
-  };
-}
-
 export interface Chart {
   el: HTMLElement;
   redraw(): void;
@@ -72,10 +49,10 @@ export function elevationChart(
         points: { show: false },
       },
     ],
-    plugins: [cursorPlugin(getDistKm)],
+    plugins: [],
   };
   const u = new uPlot(opts, [xs, ys as number[]], undefined);
-  return chartHandle(u);
+  return chartHandle(u, getDistKm);
 }
 
 export function speedChart(
@@ -105,10 +82,10 @@ export function speedChart(
         points: { show: false },
       },
     ],
-    plugins: [cursorPlugin(getTimeSec)],
+    plugins: [],
   };
   const u = new uPlot(opts, [xs, ys], undefined);
-  return chartHandle(u);
+  return chartHandle(u, getTimeSec);
 }
 
 export function speedHistogram(track: Track, w: number, h: number): Chart {
@@ -146,11 +123,46 @@ export function speedHistogram(track: Track, w: number, h: number): Chart {
   return chartHandle(u);
 }
 
-function chartHandle(u: uPlot): Chart {
+// The playback cursor is a DOM line over the plot area, not a canvas draw, so
+// moving it every frame is a single style write instead of a full re-stroke of
+// the (dense) series. getX returns the cursor's x-axis value each frame.
+function chartHandle(u: uPlot, getX?: () => number): Chart {
+  let cursor: HTMLDivElement | undefined;
+  if (getX) {
+    cursor = document.createElement("div");
+    Object.assign(cursor.style, {
+      position: "absolute",
+      top: "0",
+      bottom: "0",
+      width: "0",
+      borderLeft: "1.5px solid #ffd60a",
+      pointerEvents: "none",
+      display: "none",
+    });
+    u.over.appendChild(cursor);
+  }
+  const moveCursor = () => {
+    if (!cursor || !getX) return;
+    const x = getX();
+    if (x == null || !Number.isFinite(x)) {
+      cursor.style.display = "none";
+      return;
+    }
+    const left = u.valToPos(x, "x");
+    if (left < 0 || left > u.over.clientWidth) {
+      cursor.style.display = "none";
+      return;
+    }
+    cursor.style.display = "";
+    cursor.style.transform = `translateX(${left}px)`;
+  };
   return {
     el: u.root,
-    redraw: () => u.redraw(false, false),
-    resize: (w, h) => u.setSize({ width: w, height: h }),
+    redraw: moveCursor,
+    resize: (w, h) => {
+      u.setSize({ width: w, height: h });
+      moveCursor();
+    },
     destroy: () => u.destroy(),
   };
 }
