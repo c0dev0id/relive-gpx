@@ -130,8 +130,9 @@ body,
 /* Speed legend ----------------------------------------------------------- */
 .legend {
   position: absolute;
-  top: 16px;
+  top: 50%;
   right: 16px;
+  transform: translateY(-50%);
   z-index: 10;
   width: 180px;
   padding: 12px 14px;
