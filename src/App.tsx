@@ -56,9 +56,9 @@ export default function App() {
   function buildCharts(track: Track) {
     charts.forEach((c) => c.destroy());
     chartsContainer.innerHTML = "";
-    const w = chartsContainer.clientWidth || 900;
-    const each = Math.max(240, Math.floor(w / 3) - 8);
-    const h = 150;
+    // Vertical stack: every chart spans the panel's inner width.
+    const each = Math.max(220, chartsContainer.clientWidth - 24);
+    const h = 108;
     charts = [
       elevationChart(track, each, h, () => cursor.distKm),
       speedChart(track, each, h, () => cursor.t),
