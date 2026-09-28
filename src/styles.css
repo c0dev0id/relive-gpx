@@ -1,0 +1,242 @@
+:root {
+  --bg: #0b0d10;
+  --panel: rgba(18, 20, 24, 0.82);
+  --panel-solid: #14171c;
+  --text: #e8eaed;
+  --muted: #8a8f98;
+  --accent: #ff3b30;
+  --border: rgba(255, 255, 255, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.app {
+  position: relative;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+.map {
+  position: absolute;
+  inset: 0;
+}
+
+/* Dropzone --------------------------------------------------------------- */
+.dropzone {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at 50% 40%, #1a1f27, #0b0d10);
+  z-index: 20;
+}
+.dropzone.over .dropzone-inner {
+  border-color: var(--accent);
+  transform: scale(1.02);
+}
+.dropzone-inner {
+  border: 2px dashed var(--border);
+  border-radius: 16px;
+  padding: 48px 64px;
+  text-align: center;
+  transition: all 0.15s ease;
+}
+.dropzone-inner h1 {
+  margin: 0 0 8px;
+  font-size: 2rem;
+  letter-spacing: -0.02em;
+}
+.btn {
+  display: inline-block;
+  margin-top: 12px;
+  padding: 10px 20px;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.btn input {
+  display: none;
+}
+.muted {
+  color: var(--muted);
+}
+.err {
+  color: #ff6b6b;
+  max-width: 380px;
+}
+
+/* Telemetry -------------------------------------------------------------- */
+.telemetry {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px;
+  background: var(--panel);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  min-width: 150px;
+}
+.stat {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+}
+.stat .label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+.stat .val {
+  font-size: 1.1rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.stat .unit {
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-weight: 400;
+}
+.stat.big .val {
+  font-size: 2.6rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.stat.big .unit {
+  font-size: 1rem;
+}
+
+/* Charts ----------------------------------------------------------------- */
+.charts {
+  position: absolute;
+  right: 16px;
+  bottom: 88px;
+  z-index: 10;
+  display: flex;
+  gap: 8px;
+  padding: 10px;
+  background: var(--panel);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  max-width: calc(100vw - 32px);
+  overflow-x: auto;
+}
+.charts .u-title {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+/* Controls --------------------------------------------------------------- */
+.controls {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--panel);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+.ctrl {
+  background: var(--panel-solid);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.ctrl:hover {
+  background: #1e222a;
+}
+.ctrl.sm {
+  padding: 6px 10px;
+  font-size: 0.85rem;
+}
+.ctrl.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.speeds {
+  display: flex;
+  gap: 4px;
+}
+.scrubber {
+  flex: 1;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* Rider marker ----------------------------------------------------------- */
+.rider-marker {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+}
+.rider-marker::before {
+  content: "";
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(255, 59, 48, 0.3);
+  animation: pulse 1.8s ease-out infinite;
+}
+.rider-arrow {
+  width: 0;
+  height: 0;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-bottom: 16px solid #ff3b30;
+  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.6));
+  transform-origin: 50% 65%;
+}
+@keyframes pulse {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+@media (max-width: 720px) {
+  .charts {
+    left: 16px;
+    right: 16px;
+    bottom: 84px;
+  }
+}
