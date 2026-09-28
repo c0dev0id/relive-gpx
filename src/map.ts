@@ -136,6 +136,10 @@ export class ReplayMap {
   // Last progress fraction pushed to the trail gradient, so frames that don't
   // advance it past the gradient's visible resolution skip the paint update.
   private lastTrailProgress = -1;
+  // The chase zoom is set once on the first follow frame after a load; after
+  // that the user's zoom is left alone so they can pull the camera back (which
+  // also stops it clipping into hills at high pitch).
+  private framedFollow = false;
   private ready = false;
   private smoothedBearing = 0;
   private smoothLon = 0;
@@ -177,6 +181,7 @@ export class ReplayMap {
     const coords = track.points.map((p) => [p.lon, p.lat] as [number, number]);
     this.computeProgress(coords);
     this.lastTrailProgress = 0;
+    this.framedFollow = false;
     const geojson = lineFeature(coords);
 
     const speedGradient = this.speedGradient(track);
@@ -255,10 +260,13 @@ export class ReplayMap {
         center: [this.smoothLon, this.smoothLat],
         bearing: this.smoothedBearing,
         pitch: 62,
-        zoom: Math.max(this.map.getZoom(), 15),
+        // Only set the zoom once, to establish the chase framing; leaving it out
+        // afterwards preserves whatever zoom the user has dialed in.
+        ...(this.framedFollow ? {} : { zoom: Math.max(this.map.getZoom(), 15) }),
         // Push the rider toward the lower third so we see the road ahead.
         padding: { top: 260, bottom: 0, left: 0, right: 0 },
       });
+      this.framedFollow = true;
     }
   }
 
