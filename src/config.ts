@@ -16,7 +16,7 @@ const esriTiles =
 const satellite = maptilerKey
   ? {
       tiles: [
-        `https://api.maptiler.com/tiles/satellite-v4/{z}/{x}/{y}.jpg?key=${maptilerKey}`,
+        `https://api.maptiler.com/tiles/satellite-v2/{z}/{x}/{y}.jpg?key=${maptilerKey}`,
       ],
       tileSize: 512,
       maxZoom: 20,
