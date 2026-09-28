@@ -90,7 +90,12 @@ export function speedChart(
 
 export function speedHistogram(track: Track, w: number, h: number): Chart {
   const speeds = track.points.map((p) => mpsToKmh(p.speed));
-  const maxV = Math.max(10, Math.ceil(track.speedMax * 3.6));
+  // Derive the axis from the 99th percentile, not the max: a single GPS glitch
+  // can spike speedMax to thousands of km/h and squash all real data into the
+  // first bin. Speeds above the axis clamp into the top bin below.
+  const sorted = [...speeds].sort((a, b) => a - b);
+  const p99 = sorted[Math.floor((sorted.length - 1) * 0.99)] ?? 0;
+  const maxV = Math.max(10, Math.ceil(p99));
   const binCount = Math.min(24, Math.max(8, Math.round(maxV / 5)));
   const binSize = maxV / binCount;
   const bins = new Array(binCount).fill(0);
