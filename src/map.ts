@@ -66,12 +66,16 @@ function buildStyle(): StyleSpecification {
     },
     layers: [{ id: "satellite", type: "raster", source: "satellite" }],
     sky: {
-      "sky-color": "#88bbee",
-      "horizon-color": "#ddeeff",
-      "fog-color": "#ffffff",
-      "sky-horizon-blend": 0.6,
-      "horizon-fog-blend": 0.5,
-      "fog-ground-blend": 0.2,
+      // Deep blue overhead fading to a hazy, slightly warm horizon, with ground
+      // fog blended into the terrain and the atmospheric halo turned on so the
+      // sky reads as real when the camera is pitched up to the horizon.
+      "sky-color": "#3f78c0",
+      "horizon-color": "#c4d7ec",
+      "fog-color": "#dce8f4",
+      "sky-horizon-blend": 0.8,
+      "horizon-fog-blend": 0.7,
+      "fog-ground-blend": 0.5,
+      "atmosphere-blend": 0.6,
     },
     terrain: { source: "terrain", exaggeration: config.terrainExaggeration },
   };
