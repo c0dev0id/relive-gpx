@@ -16,7 +16,7 @@ const esriTiles =
 const satellite = maptilerKey
   ? {
       tiles: [
-        `https://api.maptiler.com/tiles/satellite-v2/{z}/{x}/{y}.jpg?key=${maptilerKey}`,
+        `https://api.maptiler.com/tiles/satellite-v4/{z}/{x}/{y}.jpg?key=${maptilerKey}`,
       ],
       tileSize: 512,
       maxZoom: 20,
@@ -35,8 +35,10 @@ export const config = {
   satelliteMaxZoom: satellite.maxZoom,
   satelliteAttribution: satellite.attribution,
 
+  // Virtual-hosted S3 URL. The path-style form (s3.amazonaws.com/<bucket>/…)
+  // no longer serves over HTTPS, so the DEM must use <bucket>.s3.amazonaws.com.
   terrainDem:
-    "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png",
+    "https://elevation-tiles-prod.s3.amazonaws.com/terrarium/{z}/{x}/{y}.png",
   terrainAttribution: "Elevation: AWS Terrain Tiles / Mapzen",
   terrainExaggeration: 1.4,
 
