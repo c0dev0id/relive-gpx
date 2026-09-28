@@ -1,33 +1,34 @@
 // Tile sources.
 //
-// - Base imagery: MapTiler satellite when a key is present, otherwise the
-//   keyless Esri World Imagery fallback so local dev works without a key.
-//   The key is read from VITE_MAPTILER_KEY at build time (injected from a
-//   GitHub Actions secret in CI). It is exposed to the client, so restrict it
-//   to the deployment origin in the MapTiler account.
+// - Base imagery: Esri World Imagery. Keyless and unmetered, so it never rate-
+//   limits — which is why it is the default for the public deployment. It is a
+//   little softer than Google/MapTiler in some regions.
+//
+//   Sharper alternative, for a LOCAL/personal build only: Google satellite.
+//   Those mt*.google.com tiles are undocumented and against Google's ToS for
+//   public/production use, so they are left commented out. To use them, swap
+//   `satellite` for the Google block below.
+//     const satellite = {
+//       tiles: [
+//         "https://mt0.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+//         "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+//         "https://mt2.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+//         "https://mt3.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+//       ],
+//       tileSize: 256,
+//       maxZoom: 20,
+//       attribution: "Imagery © Google",
+//     };
 // - Terrain DEM: AWS "terrarium" elevation tiles (open data), free, no key.
 
-const maptilerKey = import.meta.env.VITE_MAPTILER_KEY as string | undefined;
-
-// Keyless fallback. Esri serves 256px tiles up to z19.
-const esriTiles =
-  "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
-
-const satellite = maptilerKey
-  ? {
-      tiles: [
-        `https://api.maptiler.com/tiles/satellite-v2/{z}/{x}/{y}.jpg?key=${maptilerKey}`,
-      ],
-      tileSize: 512,
-      maxZoom: 20,
-      attribution: "© MapTiler © OpenStreetMap contributors",
-    }
-  : {
-      tiles: [esriTiles],
-      tileSize: 256,
-      maxZoom: 19,
-      attribution: "Imagery © Esri",
-    };
+const satellite = {
+  tiles: [
+    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+  ],
+  tileSize: 256,
+  maxZoom: 19,
+  attribution: "Imagery © Esri",
+};
 
 export const config = {
   satelliteTiles: satellite.tiles,
