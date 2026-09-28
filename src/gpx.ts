@@ -306,7 +306,6 @@ export function sampleAtPlayTime(points: TrackPoint[], pt: number): Sample {
   };
 }
 
-function shortestAngle(from: number, to: number): number {
-  let d = ((to - from + 540) % 360) - 180;
-  return d;
+export function shortestAngle(from: number, to: number): number {
+  return ((to - from + 540) % 360) - 180;
 }

@@ -141,6 +141,9 @@ function chartHandle(u: uPlot, getX?: () => number): Chart {
     });
     u.over.appendChild(cursor);
   }
+  // Cached so moveCursor doesn't force a layout read every frame; the plot width
+  // only changes on resize.
+  let plotWidth = u.over.clientWidth;
   const moveCursor = () => {
     if (!cursor || !getX) return;
     const x = getX();
@@ -149,7 +152,7 @@ function chartHandle(u: uPlot, getX?: () => number): Chart {
       return;
     }
     const left = u.valToPos(x, "x");
-    if (left < 0 || left > u.over.clientWidth) {
+    if (left < 0 || left > plotWidth) {
       cursor.style.display = "none";
       return;
     }
@@ -161,6 +164,7 @@ function chartHandle(u: uPlot, getX?: () => number): Chart {
     redraw: moveCursor,
     resize: (w, h) => {
       u.setSize({ width: w, height: h });
+      plotWidth = u.over.clientWidth;
       moveCursor();
     },
     destroy: () => u.destroy(),

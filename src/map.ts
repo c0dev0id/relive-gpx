@@ -6,7 +6,9 @@ import maplibregl from "maplibre-gl";
 import type { StyleSpecification } from "maplibre-gl";
 import type { Feature, LineString } from "geojson";
 import { config } from "./config";
-import type { Track, Sample } from "./gpx";
+import { shortestAngle, type Track, type Sample } from "./gpx";
+
+const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
 
 function buildStyle(): StyleSpecification {
   return {
@@ -74,7 +76,7 @@ function lineFeature(coords: [number, number][]): Feature<LineString> {
 // more of the trail never re-tiles geometry — only the gradient ramp updates.
 // The step stop must stay strictly inside (0, 1).
 function trailGradient(progress: number): maplibregl.ExpressionSpecification {
-  const p = Math.min(0.9999, Math.max(0.0001, progress));
+  const p = clamp(progress, 0.0001, 0.9999);
   return [
     "step",
     ["line-progress"],
@@ -91,7 +93,10 @@ export class ReplayMap {
   // the metric MapLibre uses for `line-progress`, so the reveal can't drift from
   // the rider even though the two are derived independently.
   private merc: { x: number; y: number }[] = [];
-  private progress: number[] = [];
+  private cumProgress: number[] = [];
+  // Last progress fraction pushed to the trail gradient, so frames that don't
+  // advance it past the gradient's visible resolution skip the paint update.
+  private lastTrailProgress = -1;
   private ready = false;
   private smoothedBearing = 0;
   private smoothLon = 0;
@@ -132,13 +137,14 @@ export class ReplayMap {
   private installTrack(track: Track) {
     const coords = track.points.map((p) => [p.lon, p.lat] as [number, number]);
     this.computeProgress(coords);
+    this.lastTrailProgress = 0;
     const geojson = lineFeature(coords);
 
     if (this.map.getSource("route")) {
       (this.map.getSource("route") as maplibregl.GeoJSONSource).setData(geojson);
       this.map.setPaintProperty("route-trail", "line-gradient", trailGradient(0));
     } else {
-      // lineMetrics is required for the `line-progress` used by the trail reveal.
+      // `line-progress` (the trail reveal) is only defined when lineMetrics is on.
       this.map.addSource("route", { type: "geojson", data: geojson, lineMetrics: true });
       this.map.addLayer({
         id: "route-bg",
@@ -151,9 +157,8 @@ export class ReplayMap {
           "line-opacity": 0.35,
         },
       });
-      // Same geometry as route-bg; the gradient reveals it up to the rider. Moving
-      // the reveal is a paint change, not a geometry change, so it tracks the
-      // marker synchronously at any zoom (no worker re-tiling lag, hence no gap).
+      // Moving the reveal is a paint change, not a geometry change, so it tracks
+      // the marker synchronously at any zoom (no worker re-tiling lag, hence no gap).
       this.map.addLayer({
         id: "route-trail",
         type: "line",
@@ -183,15 +188,19 @@ export class ReplayMap {
 
     this.rider.setLngLat([sample.lon, sample.lat]).setRotation(sample.heading);
 
-    if (this.map.getLayer("route-trail")) {
-      const p = this.progressAt(sample.index, sample.lon, sample.lat);
+    const p = this.progressAt(sample.index, sample.lon, sample.lat);
+    // Skip the gradient re-parse when the reveal hasn't moved past the line-
+    // gradient texture's visible resolution — over a long ride most frames
+    // advance p by less than one texel.
+    if (Math.abs(p - this.lastTrailProgress) >= 1e-4) {
+      this.lastTrailProgress = p;
       this.map.setPaintProperty("route-trail", "line-gradient", trailGradient(p));
     }
 
     if (this.follow) {
       // Low-pass both bearing and center so the chase camera drifts rather than
       // locking on: a gentle suggestion of a follow, not a rigid one.
-      const diff = ((sample.heading - this.smoothedBearing + 540) % 360) - 180;
+      const diff = shortestAngle(this.smoothedBearing, sample.heading);
       this.smoothedBearing = (this.smoothedBearing + diff * 0.02 + 360) % 360;
       this.smoothLon += (sample.lon - this.smoothLon) * 0.12;
       this.smoothLat += (sample.lat - this.smoothLat) * 0.12;
@@ -221,13 +230,13 @@ export class ReplayMap {
     }
     const total = cum[cum.length - 1] || 1;
     this.merc = merc;
-    this.progress = cum.map((d) => d / total);
+    this.cumProgress = cum.map((d) => d / total);
   }
 
   // line-progress of the rider: interpolate between the bracketing vertices by
   // the foot of the rider's position projected onto that Mercator segment.
   private progressAt(idx: number, lon: number, lat: number): number {
-    const prog = this.progress;
+    const prog = this.cumProgress;
     if (idx >= prog.length - 1) return prog[prog.length - 1] ?? 1;
     const a = this.merc[idx];
     const b = this.merc[idx + 1];
@@ -235,7 +244,7 @@ export class ReplayMap {
     const dx = b.x - a.x;
     const dy = b.y - a.y;
     const len2 = dx * dx + dy * dy;
-    const t = len2 > 0 ? Math.min(1, Math.max(0, ((h.x - a.x) * dx + (h.y - a.y) * dy) / len2)) : 0;
+    const t = len2 > 0 ? clamp(((h.x - a.x) * dx + (h.y - a.y) * dy) / len2, 0, 1) : 0;
     return prog[idx] + t * (prog[idx + 1] - prog[idx]);
   }
 
