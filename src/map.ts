@@ -4,7 +4,7 @@
 
 import maplibregl from "maplibre-gl";
 import type { StyleSpecification } from "maplibre-gl";
-import type { Feature, LineString } from "geojson";
+import type { Feature, LineString, Point } from "geojson";
 import { config } from "./config";
 import type { Track, Sample } from "./gpx";
 
@@ -41,6 +41,30 @@ function buildStyle(): StyleSpecification {
   };
 }
 
+// A north-pointing arrow drawn on a canvas, used as the rider symbol icon.
+// Rendered on the map (not as a DOM marker) so it sits on the same terrain
+// surface as the trail — otherwise, under pitch, the two appear offset.
+function makeArrowImage(size = 64): ImageData {
+  const c = document.createElement("canvas");
+  c.width = c.height = size;
+  const ctx = c.getContext("2d")!;
+  const s = size;
+  ctx.translate(s / 2, s / 2);
+  ctx.beginPath();
+  ctx.moveTo(0, -s * 0.4); // tip (points up = north)
+  ctx.lineTo(s * 0.28, s * 0.34);
+  ctx.lineTo(0, s * 0.16); // rear notch, chevron shape
+  ctx.lineTo(-s * 0.28, s * 0.34);
+  ctx.closePath();
+  ctx.fillStyle = "#ff3b30";
+  ctx.strokeStyle = "rgba(255,255,255,0.95)";
+  ctx.lineWidth = s * 0.05;
+  ctx.lineJoin = "round";
+  ctx.fill();
+  ctx.stroke();
+  return ctx.getImageData(0, 0, s, s);
+}
+
 // Solid trail color up to `progress` along the line, transparent afterwards.
 // line-progress step stops must be strictly inside (0, 1).
 function trailGradient(progress: number): maplibregl.ExpressionSpecification {
@@ -56,7 +80,6 @@ function trailGradient(progress: number): maplibregl.ExpressionSpecification {
 
 export class ReplayMap {
   readonly map: maplibregl.Map;
-  private marker: maplibregl.Marker;
   private track: Track | null = null;
   private ready = false;
   private smoothedBearing = 0;
@@ -74,19 +97,20 @@ export class ReplayMap {
     });
     this.map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right");
 
-    const el = document.createElement("div");
-    el.className = "rider-marker";
-    const arrow = document.createElement("div");
-    arrow.className = "rider-arrow";
-    el.appendChild(arrow);
-    // rotationAlignment "map": setRotation(bearing) points the arrow along the
-    // geographic heading and keeps it correct as the map itself rotates.
-    this.marker = new maplibregl.Marker({ element: el, rotationAlignment: "map" });
-
     this.map.on("load", () => {
       this.ready = true;
+      // pixelRatio 2 => 64px canvas renders at 32 CSS px base size.
+      this.map.addImage("rider-arrow", makeArrowImage(), { pixelRatio: 2 });
       if (this.track) this.installTrack(this.track);
     });
+  }
+
+  private riderFeature(lon: number, lat: number, bearing: number): Feature<Point> {
+    return {
+      type: "Feature",
+      properties: { bearing },
+      geometry: { type: "Point", coordinates: [lon, lat] },
+    };
   }
 
   setTrack(track: Track) {
@@ -135,8 +159,37 @@ export class ReplayMap {
       });
     }
 
-    this.marker.setLngLat([track.points[0].lon, track.points[0].lat]).addTo(this.map);
-    this.smoothedBearing = track.points[0].heading;
+    const p0 = track.points[0];
+    const riderData = this.riderFeature(p0.lon, p0.lat, p0.heading);
+    if (this.map.getSource("rider")) {
+      (this.map.getSource("rider") as maplibregl.GeoJSONSource).setData(riderData);
+    } else {
+      this.map.addSource("rider", { type: "geojson", data: riderData });
+      this.map.addLayer({
+        id: "rider-halo",
+        type: "circle",
+        source: "rider",
+        paint: {
+          "circle-radius": 9,
+          "circle-color": "#ff3b30",
+          "circle-opacity": 0.25,
+        },
+      });
+      this.map.addLayer({
+        id: "rider",
+        type: "symbol",
+        source: "rider",
+        layout: {
+          "icon-image": "rider-arrow",
+          "icon-size": 1.15,
+          "icon-rotate": ["get", "bearing"],
+          "icon-rotation-alignment": "map",
+          "icon-allow-overlap": true,
+          "icon-ignore-placement": true,
+        },
+      });
+    }
+    this.smoothedBearing = p0.heading;
 
     this.map.fitBounds(track.bounds, {
       padding: 80,
@@ -150,8 +203,8 @@ export class ReplayMap {
   update(sample: Sample, progress: number) {
     if (!this.ready || !this.track) return;
 
-    this.marker.setLngLat([sample.lon, sample.lat]);
-    this.marker.setRotation(sample.heading);
+    const rider = this.map.getSource("rider") as maplibregl.GeoJSONSource | undefined;
+    rider?.setData(this.riderFeature(sample.lon, sample.lat, sample.heading));
 
     if (this.map.getLayer("route-trail")) {
       this.map.setPaintProperty(
