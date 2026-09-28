@@ -104,7 +104,8 @@ export default function App() {
   });
 
   const speeds = [1, 2, 4, 8];
-  const SEEK_STEP = 5; // seconds per arrow-key nudge
+  const SEEK_STEP = 5; // seconds per left/right nudge
+  const ZOOM_STEP = 0.5; // zoom levels per up/down nudge
 
   // Speed legend, derived from the same stops that color the trail so the two
   // can't drift. Positions map each stop's speed across [lo, hi]; the ends
@@ -140,6 +141,12 @@ export default function App() {
       } else if (e.key === "ArrowRight") {
         e.preventDefault();
         pb.seek(pb.time() + SEEK_STEP);
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        replay?.map.setZoom(replay.map.getZoom() + ZOOM_STEP);
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        replay?.map.setZoom(replay.map.getZoom() - ZOOM_STEP);
       }
     };
     window.addEventListener("keydown", onKey);
