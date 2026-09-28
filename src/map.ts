@@ -1,6 +1,6 @@
 // MapLibre 3D map: satellite imagery draped over DEM terrain, the full route
-// as a dim line, a bright trail built from the traveled coordinates, a DOM
-// rider marker, and an optional slow-follow chase camera.
+// as a dim line, a bright trail revealed along that same static line via a
+// line-gradient step, a DOM rider marker, and an optional slow-follow camera.
 
 import maplibregl from "maplibre-gl";
 import type { StyleSpecification } from "maplibre-gl";
@@ -61,11 +61,6 @@ function makeRiderElement(): HTMLElement {
   return el;
 }
 
-// How many traveled points the active drag-line may hold before its geometry is
-// folded into the committed trail. Larger = fewer (but bigger) committed
-// re-parses and a longer per-frame active line; both are cheap at this size.
-const COMMIT_STRIDE = 512;
-
 function lineFeature(coords: [number, number][]): Feature<LineString> {
   return {
     type: "Feature",
@@ -74,14 +69,29 @@ function lineFeature(coords: [number, number][]): Feature<LineString> {
   };
 }
 
+// Solid trail up to `progress` (a line-progress fraction, 0..1), transparent
+// afterwards. Applied as a paint property on the static route line, so revealing
+// more of the trail never re-tiles geometry — only the gradient ramp updates.
+// The step stop must stay strictly inside (0, 1).
+function trailGradient(progress: number): maplibregl.ExpressionSpecification {
+  const p = Math.min(0.9999, Math.max(0.0001, progress));
+  return [
+    "step",
+    ["line-progress"],
+    "#ff3b30",
+    p,
+    "rgba(0,0,0,0)",
+  ] as maplibregl.ExpressionSpecification;
+}
+
 export class ReplayMap {
   readonly map: maplibregl.Map;
   private track: Track | null = null;
-  private coords: [number, number][] = [];
-  // liveIdx: last committed index whose async setData is guaranteed applied.
-  // pendingIdx: last committed index whose setData may still be in flight.
-  private liveIdx = 0;
-  private pendingIdx = 0;
+  // Per-vertex Mercator coordinates and cumulative line-progress (0..1), matching
+  // the metric MapLibre uses for `line-progress`, so the reveal can't drift from
+  // the rider even though the two are derived independently.
+  private merc: { x: number; y: number }[] = [];
+  private progress: number[] = [];
   private ready = false;
   private smoothedBearing = 0;
   private smoothLon = 0;
@@ -121,18 +131,15 @@ export class ReplayMap {
 
   private installTrack(track: Track) {
     const coords = track.points.map((p) => [p.lon, p.lat] as [number, number]);
-    this.coords = coords;
-    this.liveIdx = 0;
-    this.pendingIdx = 0;
+    this.computeProgress(coords);
     const geojson = lineFeature(coords);
-    const start = lineFeature([coords[0]]);
 
     if (this.map.getSource("route")) {
       (this.map.getSource("route") as maplibregl.GeoJSONSource).setData(geojson);
-      (this.map.getSource("trail") as maplibregl.GeoJSONSource).setData(start);
-      (this.map.getSource("trail-tip") as maplibregl.GeoJSONSource).setData(start);
+      this.map.setPaintProperty("route-trail", "line-gradient", trailGradient(0));
     } else {
-      this.map.addSource("route", { type: "geojson", data: geojson });
+      // lineMetrics is required for the `line-progress` used by the trail reveal.
+      this.map.addSource("route", { type: "geojson", data: geojson, lineMetrics: true });
       this.map.addLayer({
         id: "route-bg",
         type: "line",
@@ -144,29 +151,15 @@ export class ReplayMap {
           "line-opacity": 0.35,
         },
       });
-      // The trail is drawn from the same coordinates as the rider marker, so
-      // the two can't drift apart. It is split to avoid re-parsing the whole
-      // (growing) line every frame: "trail" holds the committed history and is
-      // rebuilt only once per COMMIT_STRIDE points; "trail-tip" is the short
-      // active drag-line from the last known-applied committed vertex to the
-      // rider, redrawn every frame. The tip starts one commit generation back
-      // so it always overlaps the committed line even while a commit's async
-      // setData is still in flight — otherwise a stride-sized gap would appear.
-      this.map.addSource("trail", { type: "geojson", data: start });
+      // Same geometry as route-bg; the gradient reveals it up to the rider. Moving
+      // the reveal is a paint change, not a geometry change, so it tracks the
+      // marker synchronously at any zoom (no worker re-tiling lag, hence no gap).
       this.map.addLayer({
-        id: "trail",
+        id: "route-trail",
         type: "line",
-        source: "trail",
+        source: "route",
         layout: { "line-cap": "round", "line-join": "round" },
-        paint: { "line-color": "#ff3b30", "line-width": 5 },
-      });
-      this.map.addSource("trail-tip", { type: "geojson", data: start });
-      this.map.addLayer({
-        id: "trail-tip",
-        type: "line",
-        source: "trail-tip",
-        layout: { "line-cap": "round", "line-join": "round" },
-        paint: { "line-color": "#ff3b30", "line-width": 5 },
+        paint: { "line-width": 5, "line-gradient": trailGradient(0) },
       });
     }
 
@@ -190,31 +183,10 @@ export class ReplayMap {
 
     this.rider.setLngLat([sample.lon, sample.lat]).setRotation(sample.heading);
 
-    const idx = sample.index;
-    const head: [number, number] = [sample.lon, sample.lat];
-
-    // Fixate the committed line when the active segment has grown a full stride,
-    // or resync on a backward seek. This is the only time the growing line is
-    // re-parsed — a few hundred times over a whole ride, not per frame.
-    if (idx - this.pendingIdx >= COMMIT_STRIDE) {
-      // A full stride has been drawn since the last commit, so that commit's
-      // setData is certainly applied: promote it to the live floor before
-      // issuing the next (still in-flight) commit.
-      this.liveIdx = this.pendingIdx;
-      this.pendingIdx = idx;
-      const trail = this.map.getSource("trail") as maplibregl.GeoJSONSource | undefined;
-      trail?.setData(lineFeature(this.coords.slice(0, idx + 1)));
-    } else if (idx < this.pendingIdx) {
-      this.liveIdx = idx;
-      this.pendingIdx = idx;
-      const trail = this.map.getSource("trail") as maplibregl.GeoJSONSource | undefined;
-      trail?.setData(lineFeature(this.coords.slice(0, idx + 1)));
+    if (this.map.getLayer("route-trail")) {
+      const p = this.progressAt(sample.index, sample.lon, sample.lat);
+      this.map.setPaintProperty("route-trail", "line-gradient", trailGradient(p));
     }
-    // Active drag-line: from the last known-applied committed vertex, along the
-    // traveled vertices, to the rider. Starting at liveIdx (one commit back)
-    // guarantees overlap with the live committed line. Bounded to ~2 strides.
-    const tip = this.map.getSource("trail-tip") as maplibregl.GeoJSONSource | undefined;
-    tip?.setData(lineFeature([...this.coords.slice(this.liveIdx, idx + 1), head]));
 
     if (this.follow) {
       // Low-pass both bearing and center so the chase camera drifts rather than
@@ -232,6 +204,39 @@ export class ReplayMap {
         padding: { top: 260, bottom: 0, left: 0, right: 0 },
       });
     }
+  }
+
+  // Precompute per-vertex Mercator coords and normalized cumulative distance.
+  // line-progress is cumulative Euclidean distance in projected (Mercator) space
+  // normalized to the total, so matching that metric keeps the reveal aligned.
+  private computeProgress(coords: [number, number][]) {
+    const merc = coords.map((c) => {
+      const m = maplibregl.MercatorCoordinate.fromLngLat({ lng: c[0], lat: c[1] });
+      return { x: m.x, y: m.y };
+    });
+    const cum = new Array<number>(coords.length);
+    cum[0] = 0;
+    for (let i = 1; i < merc.length; i++) {
+      cum[i] = cum[i - 1] + Math.hypot(merc[i].x - merc[i - 1].x, merc[i].y - merc[i - 1].y);
+    }
+    const total = cum[cum.length - 1] || 1;
+    this.merc = merc;
+    this.progress = cum.map((d) => d / total);
+  }
+
+  // line-progress of the rider: interpolate between the bracketing vertices by
+  // the foot of the rider's position projected onto that Mercator segment.
+  private progressAt(idx: number, lon: number, lat: number): number {
+    const prog = this.progress;
+    if (idx >= prog.length - 1) return prog[prog.length - 1] ?? 1;
+    const a = this.merc[idx];
+    const b = this.merc[idx + 1];
+    const h = maplibregl.MercatorCoordinate.fromLngLat({ lng: lon, lat: lat });
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len2 = dx * dx + dy * dy;
+    const t = len2 > 0 ? Math.min(1, Math.max(0, ((h.x - a.x) * dx + (h.y - a.y) * dy) / len2)) : 0;
+    return prog[idx] + t * (prog[idx + 1] - prog[idx]);
   }
 
   frameToTrack() {
