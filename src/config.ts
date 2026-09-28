@@ -1,24 +1,39 @@
 // Tile sources.
 //
-// - Base imagery: Google satellite (XYZ). Higher quality than Esri in most
-//   regions. NOTE: these mt*.google.com tiles are undocumented and against
-//   Google's ToS for public/production use — fine for personal/showcase use.
-//   For a public deployment, swap to the Esri fallback below or a keyed vendor.
+// - Base imagery: MapTiler satellite when a key is present, otherwise the
+//   keyless Esri World Imagery fallback so local dev works without a key.
+//   The key is read from VITE_MAPTILER_KEY at build time (injected from a
+//   GitHub Actions secret in CI). It is exposed to the client, so restrict it
+//   to the deployment origin in the MapTiler account.
 // - Terrain DEM: AWS "terrarium" elevation tiles (open data), free, no key.
 
-export const config = {
-  satelliteTiles: [
-    "https://mt0.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
-    "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
-    "https://mt2.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
-    "https://mt3.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
-  ],
-  satelliteAttribution: "Imagery © Google",
-  satelliteMaxZoom: 20,
+const maptilerKey = import.meta.env.VITE_MAPTILER_KEY as string | undefined;
 
-  // Keyless fallback — replace satelliteTiles with [esriTiles] to use it.
-  esriTiles:
-    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+// Keyless fallback. Esri serves 256px tiles up to z19.
+const esriTiles =
+  "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
+
+const satellite = maptilerKey
+  ? {
+      tiles: [
+        `https://api.maptiler.com/tiles/satellite-v2/{z}/{x}/{y}.jpg?key=${maptilerKey}`,
+      ],
+      tileSize: 512,
+      maxZoom: 20,
+      attribution: "© MapTiler © OpenStreetMap contributors",
+    }
+  : {
+      tiles: [esriTiles],
+      tileSize: 256,
+      maxZoom: 19,
+      attribution: "Imagery © Esri",
+    };
+
+export const config = {
+  satelliteTiles: satellite.tiles,
+  satelliteTileSize: satellite.tileSize,
+  satelliteMaxZoom: satellite.maxZoom,
+  satelliteAttribution: satellite.attribution,
 
   terrainDem:
     "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png",
