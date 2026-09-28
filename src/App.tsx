@@ -79,8 +79,7 @@ export default function App() {
     setSample(s);
     cursor.t = t; // play-time; matches the speed chart's x axis
     cursor.distKm = s.dist / 1000;
-    const progress = track.totalDist > 0 ? s.dist / track.totalDist : 0;
-    replay?.update(s, progress);
+    replay?.update(s);
     // Repaint the two cursor charts (cheap: paths are cached).
     charts[0]?.redraw();
     charts[1]?.redraw();

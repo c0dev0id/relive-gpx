@@ -65,22 +65,19 @@ function makeArrowImage(size = 64): ImageData {
   return ctx.getImageData(0, 0, s, s);
 }
 
-// Solid trail color up to `progress` along the line, transparent afterwards.
-// line-progress step stops must be strictly inside (0, 1).
-function trailGradient(progress: number): maplibregl.ExpressionSpecification {
-  const p = Math.min(0.9999, Math.max(0.0001, progress));
-  return [
-    "step",
-    ["line-progress"],
-    "#ff3b30",
-    p,
-    "rgba(0,0,0,0)",
-  ] as maplibregl.ExpressionSpecification;
+function lineFeature(coords: [number, number][]): Feature<LineString> {
+  return {
+    type: "Feature",
+    properties: {},
+    geometry: { type: "LineString", coordinates: coords },
+  };
 }
 
 export class ReplayMap {
   readonly map: maplibregl.Map;
   private track: Track | null = null;
+  private coords: [number, number][] = [];
+  private lastIdx = -1;
   private ready = false;
   private smoothedBearing = 0;
   follow = true;
@@ -120,20 +117,17 @@ export class ReplayMap {
 
   private installTrack(track: Track) {
     const coords = track.points.map((p) => [p.lon, p.lat] as [number, number]);
-    const geojson: Feature<LineString> = {
-      type: "Feature",
-      properties: {},
-      geometry: { type: "LineString", coordinates: coords },
-    };
+    this.coords = coords;
+    this.lastIdx = -1;
+    const geojson = lineFeature(coords);
+    const start = lineFeature([coords[0]]);
 
     if (this.map.getSource("route")) {
       (this.map.getSource("route") as maplibregl.GeoJSONSource).setData(geojson);
+      (this.map.getSource("trail") as maplibregl.GeoJSONSource).setData(start);
+      (this.map.getSource("trail-tip") as maplibregl.GeoJSONSource).setData(start);
     } else {
-      this.map.addSource("route", {
-        type: "geojson",
-        data: geojson,
-        lineMetrics: true,
-      });
+      this.map.addSource("route", { type: "geojson", data: geojson });
       this.map.addLayer({
         id: "route-bg",
         type: "line",
@@ -145,17 +139,25 @@ export class ReplayMap {
           "line-opacity": 0.35,
         },
       });
-      // MapLibre has no line-trim-offset; reveal the trail with a line-gradient
-      // step over line-progress (transparent past the current position).
+      // Trail is built from the same coordinates as the rider marker, so the
+      // two can't drift apart. The bulk trail (traveled vertices) is only
+      // re-sliced when the point index changes; the short tip segment bridges
+      // that last vertex to the rider's interpolated position every frame.
+      this.map.addSource("trail", { type: "geojson", data: start });
       this.map.addLayer({
-        id: "route-trail",
+        id: "trail",
         type: "line",
-        source: "route",
+        source: "trail",
         layout: { "line-cap": "round", "line-join": "round" },
-        paint: {
-          "line-width": 5,
-          "line-gradient": trailGradient(0),
-        },
+        paint: { "line-color": "#ff3b30", "line-width": 5 },
+      });
+      this.map.addSource("trail-tip", { type: "geojson", data: start });
+      this.map.addLayer({
+        id: "trail-tip",
+        type: "line",
+        source: "trail-tip",
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: { "line-color": "#ff3b30", "line-width": 5 },
       });
     }
 
@@ -200,19 +202,20 @@ export class ReplayMap {
   }
 
   // Called every animation frame with the interpolated rider state.
-  update(sample: Sample, progress: number) {
+  update(sample: Sample) {
     if (!this.ready || !this.track) return;
 
     const rider = this.map.getSource("rider") as maplibregl.GeoJSONSource | undefined;
     rider?.setData(this.riderFeature(sample.lon, sample.lat, sample.heading));
 
-    if (this.map.getLayer("route-trail")) {
-      this.map.setPaintProperty(
-        "route-trail",
-        "line-gradient",
-        trailGradient(progress),
-      );
+    const idx = sample.index;
+    if (idx !== this.lastIdx) {
+      this.lastIdx = idx;
+      const trail = this.map.getSource("trail") as maplibregl.GeoJSONSource | undefined;
+      trail?.setData(lineFeature(this.coords.slice(0, idx + 1)));
     }
+    const tip = this.map.getSource("trail-tip") as maplibregl.GeoJSONSource | undefined;
+    tip?.setData(lineFeature([this.coords[idx], [sample.lon, sample.lat]]));
 
     if (this.follow) {
       // Low-pass the bearing so the chase camera swings gently.
