@@ -14,9 +14,9 @@ function buildStyle(): StyleSpecification {
     sources: {
       satellite: {
         type: "raster",
-        tiles: [config.satelliteTiles],
+        tiles: config.satelliteTiles,
         tileSize: 256,
-        maxzoom: 19,
+        maxzoom: config.satelliteMaxZoom,
         attribution: config.satelliteAttribution,
       },
       terrain: {
