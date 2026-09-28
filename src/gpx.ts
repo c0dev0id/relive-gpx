@@ -1,13 +1,24 @@
 // GPX parsing + track preprocessing.
-// The replay clock is driven by real timestamps, so every point carries a
-// cumulative time offset (t) and cumulative distance for O(log n) lookups.
+//
+// Each point carries two time axes:
+//   t  — real seconds since start (drives the telemetry clock; honest about
+//        recording breaks, so it jumps forward across them)
+//   pt — play-time seconds, where every inter-point gap is capped (see
+//        DEFAULT_MAX_GAP). Playback, the scrubber, and the speed chart run on
+//        this axis so a receiver-off break becomes a brief hold, not a freeze.
+// Cumulative distance is precomputed for O(log n) sampler lookups.
+
+// Recording breaks (receiver switched off) leave large time gaps. Capping the
+// wait between two points keeps the rider parked for a moment, then continues.
+export const DEFAULT_MAX_GAP = 20; // seconds
 
 export interface TrackPoint {
   lat: number;
   lon: number;
   ele: number | null; // meters
   time: number; // epoch ms
-  t: number; // seconds since track start
+  t: number; // real seconds since track start
+  pt: number; // play-time seconds (gaps capped)
   dist: number; // cumulative meters
   speed: number; // m/s
   heading: number; // degrees, 0 = north
@@ -20,7 +31,8 @@ export interface TrackPoint {
 export interface Track {
   name: string;
   points: TrackPoint[];
-  duration: number; // seconds
+  duration: number; // real seconds
+  playDuration: number; // play-time seconds (gaps capped)
   totalDist: number; // meters
   bounds: [[number, number], [number, number]]; // [[minLon,minLat],[maxLon,maxLat]]
   eleMin: number;
@@ -80,15 +92,20 @@ function local(el: Element): string {
   return i >= 0 ? tag.slice(i + 1) : tag;
 }
 
-// Reads a descendant's text value by local name, ignoring XML namespaces.
-function childValue(parent: Element, localName: string): string | null {
-  for (const child of Array.from(parent.querySelectorAll("*"))) {
-    if (local(child) === localName) return child.textContent;
+// Collects leaf text values in a subtree keyed by local name, in a single DFS.
+// Far cheaper than one querySelectorAll per field across tens of thousands of
+// points. First occurrence wins (GPX fields appear once per point).
+function collectLeaves(el: Element, out: Record<string, string>): void {
+  const kids = el.children;
+  if (kids.length === 0) {
+    const name = local(el);
+    if (out[name] === undefined) out[name] = el.textContent ?? "";
+    return;
   }
-  return null;
+  for (let i = 0; i < kids.length; i++) collectLeaves(kids[i], out);
 }
 
-export function parseGpx(xml: string): Track {
+export function parseGpx(xml: string, maxGap = DEFAULT_MAX_GAP): Track {
   const doc = new DOMParser().parseFromString(xml, "application/xml");
   const parseError = doc.querySelector("parsererror");
   if (parseError) throw new Error("Invalid GPX: " + parseError.textContent);
@@ -116,22 +133,24 @@ export function parseGpx(xml: string): Track {
   }
 
   const raw: Raw[] = [];
+  const v: Record<string, string> = {};
   for (const pt of trkpts) {
     const lat = num(pt.getAttribute("lat"));
     const lon = num(pt.getAttribute("lon"));
     if (lat == null || lon == null) continue;
-    const timeStr = childValue(pt, "time");
-    const time = timeStr ? Date.parse(timeStr) : null;
+    for (const k in v) delete v[k];
+    collectLeaves(pt, v);
+    const time = v.time ? Date.parse(v.time) : null;
     raw.push({
       lat,
       lon,
-      ele: num(childValue(pt, "ele")),
+      ele: num(v.ele),
       time: time != null && Number.isFinite(time) ? time : null,
-      hr: num(childValue(pt, "hr")),
-      cad: num(childValue(pt, "cad")),
-      power: num(childValue(pt, "power")) ?? num(childValue(pt, "pwr")),
-      temp: num(childValue(pt, "atemp")) ?? num(childValue(pt, "temp")),
-      extSpeed: num(childValue(pt, "speed")),
+      hr: num(v.hr),
+      cad: num(v.cad),
+      power: num(v.power) ?? num(v.pwr),
+      temp: num(v.atemp) ?? num(v.temp),
+      extSpeed: num(v.speed),
     });
   }
 
@@ -140,6 +159,7 @@ export function parseGpx(xml: string): Track {
 
   const points: TrackPoint[] = [];
   let dist = 0;
+  let playT = 0;
   let eleMin = Infinity;
   let eleMax = -Infinity;
   let eleGain = 0;
@@ -157,10 +177,12 @@ export function parseGpx(xml: string): Track {
     const t = (time - t0) / 1000;
 
     let speed = r.extSpeed ?? 0;
-    if (r.extSpeed == null && i > 0) {
+    if (i > 0) {
       const prev = points[i - 1];
       const dt = t - prev.t;
-      if (dt > 0) speed = (dist - prev.dist) / dt;
+      // Cap the wait between points so receiver-off breaks don't freeze replay.
+      playT += Math.min(Math.max(dt, 0), maxGap);
+      if (r.extSpeed == null && dt > 0) speed = (dist - prev.dist) / dt;
     }
     if (speed > speedMax) speedMax = speed;
 
@@ -184,6 +206,7 @@ export function parseGpx(xml: string): Track {
       ele: r.ele,
       time,
       t,
+      pt: playT,
       dist,
       speed,
       heading,
@@ -212,6 +235,7 @@ export function parseGpx(xml: string): Track {
     name,
     points,
     duration: points[points.length - 1].t,
+    playDuration: points[points.length - 1].pt,
     totalDist: dist,
     bounds: [
       [minLon, minLat],
@@ -225,15 +249,15 @@ export function parseGpx(xml: string): Track {
   };
 }
 
-// Binary search for the last point at or before time t (seconds).
-export function indexAtTime(points: TrackPoint[], t: number): number {
+// Binary search for the last point at or before play-time pt (seconds).
+export function indexAtPlayTime(points: TrackPoint[], pt: number): number {
   let lo = 0;
   let hi = points.length - 1;
-  if (t <= points[0].t) return 0;
-  if (t >= points[hi].t) return hi;
+  if (pt <= points[0].pt) return 0;
+  if (pt >= points[hi].pt) return hi;
   while (lo < hi) {
     const mid = (lo + hi + 1) >> 1;
-    if (points[mid].t <= t) lo = mid;
+    if (points[mid].pt <= pt) lo = mid;
     else hi = mid - 1;
   }
   return lo;
@@ -246,6 +270,7 @@ export interface Sample {
   speed: number;
   heading: number;
   dist: number;
+  t: number; // real seconds since start (for the telemetry clock)
   hr: number | null;
   cad: number | null;
   power: number | null;
@@ -253,16 +278,16 @@ export interface Sample {
   index: number;
 }
 
-// Linearly interpolate track state at time t (seconds since start).
-export function sampleAtTime(points: TrackPoint[], t: number): Sample {
-  const i = indexAtTime(points, t);
+// Linearly interpolate track state at play-time pt (seconds since start).
+export function sampleAtPlayTime(points: TrackPoint[], pt: number): Sample {
+  const i = indexAtPlayTime(points, pt);
   const a = points[i];
   const b = points[i + 1];
   if (!b) {
     return { ...a, index: i };
   }
-  const span = b.t - a.t;
-  const f = span > 0 ? (t - a.t) / span : 0;
+  const span = b.pt - a.pt;
+  const f = span > 0 ? (pt - a.pt) / span : 0;
   const lerp = (x: number, y: number) => x + (y - x) * f;
   const heading = a.heading + shortestAngle(a.heading, b.heading) * f;
   return {
@@ -272,6 +297,7 @@ export function sampleAtTime(points: TrackPoint[], t: number): Sample {
     speed: lerp(a.speed, b.speed),
     heading,
     dist: lerp(a.dist, b.dist),
+    t: lerp(a.t, b.t),
     hr: a.hr,
     cad: a.cad,
     power: a.power,

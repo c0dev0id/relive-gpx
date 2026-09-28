@@ -1,17 +1,23 @@
-import { indexAtTime, sampleAtTime, haversine, type TrackPoint } from "../src/gpx.ts";
+import {
+  indexAtPlayTime,
+  sampleAtPlayTime,
+  haversine,
+  type TrackPoint,
+} from "../src/gpx.ts";
 
 function assert(cond: boolean, msg: string) {
   if (!cond) throw new Error("FAIL: " + msg);
   console.log("ok: " + msg);
 }
 
-// Build a tiny 4-point track, 1s apart, moving east.
+// Build a tiny 4-point track, 1s apart, moving east (no gaps: pt === t).
 const pts: TrackPoint[] = [0, 1, 2, 3].map((i) => ({
   lat: 46.5,
   lon: 6.6 + i * 0.001,
   ele: 600 + i * 10,
   time: i * 1000,
   t: i,
+  pt: i,
   dist: i * 76.5, // ~76m per 0.001 lon at this latitude
   speed: 10,
   heading: 90,
@@ -21,17 +27,18 @@ const pts: TrackPoint[] = [0, 1, 2, 3].map((i) => ({
   temp: null,
 }));
 
-assert(indexAtTime(pts, -5) === 0, "clamps below start");
-assert(indexAtTime(pts, 100) === 3, "clamps above end");
-assert(indexAtTime(pts, 1.9) === 1, "finds preceding index");
-assert(indexAtTime(pts, 2) === 2, "exact match lands on point");
+assert(indexAtPlayTime(pts, -5) === 0, "clamps below start");
+assert(indexAtPlayTime(pts, 100) === 3, "clamps above end");
+assert(indexAtPlayTime(pts, 1.9) === 1, "finds preceding index");
+assert(indexAtPlayTime(pts, 2) === 2, "exact match lands on point");
 
-const mid = sampleAtTime(pts, 0.5);
+const mid = sampleAtPlayTime(pts, 0.5);
 assert(Math.abs(mid.lon - (6.6 + 0.0005)) < 1e-9, "lon interpolates halfway");
 assert(Math.abs(mid.ele! - 605) < 1e-9, "ele interpolates halfway");
+assert(Math.abs(mid.t - 0.5) < 1e-9, "real time interpolates halfway");
 assert(mid.index === 0, "sample index is the preceding point");
 
-const end = sampleAtTime(pts, 3);
+const end = sampleAtPlayTime(pts, 3);
 assert(end.index === 3 && Math.abs(end.lon - 6.603) < 1e-9, "end sample exact");
 
 const d = haversine(46.5, 6.6, 46.5, 6.601);
