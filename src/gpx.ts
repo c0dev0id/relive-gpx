@@ -40,6 +40,7 @@ export interface Track {
   eleGain: number;
   speedMax: number;
   hasTime: boolean;
+  isRoute: boolean; // built from <rtept> (planned route), not a recorded track
 }
 
 const R = 6371008.8; // mean earth radius, meters
@@ -110,12 +111,17 @@ export function parseGpx(xml: string, maxGap = DEFAULT_MAX_GAP): Track {
   const parseError = doc.querySelector("parsererror");
   if (parseError) throw new Error("Invalid GPX: " + parseError.textContent);
 
+  // Prefer a recorded track (<trkpt>) over a planned route (<rtept>): a track
+  // carries real timing/speed, a route is just a path. Fall back to the route
+  // only when there is no track, and flag it so the caller can warn.
   const all = Array.from(doc.querySelectorAll("*"));
-  const trkpts = all.filter(
-    (el) => local(el) === "trkpt" || local(el) === "rtept",
-  );
-  if (trkpts.length === 0)
-    throw new Error("No track points (<trkpt>) found in file.");
+  const trkpts = all.filter((el) => local(el) === "trkpt");
+  const isRoute = trkpts.length === 0;
+  const srcPts = isRoute
+    ? all.filter((el) => local(el) === "rtept")
+    : trkpts;
+  if (srcPts.length === 0)
+    throw new Error("No track (<trkpt>) or route (<rtept>) points in file.");
 
   const nameEl = all.find((el) => local(el) === "name");
   const name = nameEl?.textContent?.trim() || "Track";
@@ -134,7 +140,7 @@ export function parseGpx(xml: string, maxGap = DEFAULT_MAX_GAP): Track {
 
   const raw: Raw[] = [];
   const v: Record<string, string> = {};
-  for (const pt of trkpts) {
+  for (const pt of srcPts) {
     const lat = num(pt.getAttribute("lat"));
     const lon = num(pt.getAttribute("lon"));
     if (lat == null || lon == null) continue;
@@ -246,6 +252,7 @@ export function parseGpx(xml: string, maxGap = DEFAULT_MAX_GAP): Track {
     eleGain,
     speedMax,
     hasTime,
+    isRoute,
   };
 }
 

@@ -14,6 +14,7 @@ import { config } from "./config";
 export default function App() {
   const pb = createPlayback();
   const [error, setError] = createSignal("");
+  const [notice, setNotice] = createSignal("");
   const [loading, setLoading] = createSignal(false);
   const [follow, setFollow] = createSignal(true);
   const [dragOver, setDragOver] = createSignal(false);
@@ -38,12 +39,17 @@ export default function App() {
 
   async function loadFile(file: File) {
     setError("");
+    setNotice("");
     setLoading(true);
     try {
       const text = await file.text();
       const track = parseGpx(text);
-      if (!track.hasTime)
-        setError("No timestamps in file — replaying at a synthetic 1 Hz.");
+      if (track.isRoute)
+        setNotice(
+          "This file has no recorded track, only a planned route — speed and timing are synthetic.",
+        );
+      else if (!track.hasTime)
+        setNotice("No timestamps in file — replaying at a synthetic 1 Hz.");
       pb.load(track);
       replay?.setTrack(track);
       buildCharts(track);
@@ -156,6 +162,19 @@ export default function App() {
   return (
     <div class="app">
       <div class="map" ref={mapContainer} />
+
+      <Show when={pb.track() && notice()}>
+        <div class="notice">
+          <span>{notice()}</span>
+          <button
+            class="notice-close"
+            onClick={() => setNotice("")}
+            title="Dismiss"
+          >
+            ×
+          </button>
+        </div>
+      </Show>
 
       <Show when={!pb.track()}>
         <div
