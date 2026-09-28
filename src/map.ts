@@ -1,14 +1,48 @@
 // MapLibre 3D map: satellite imagery draped over DEM terrain, the full route
-// as a dim line, a bright trail revealed along that same static line via a
-// line-gradient step, a DOM rider marker, and an optional slow-follow camera.
+// drawn as a static speed-colored line, the part ahead of the rider hidden by a
+// cover line whose reveal moves via a line-gradient step, a DOM rider marker,
+// and an optional slow-follow camera.
 
 import maplibregl from "maplibre-gl";
 import type { StyleSpecification } from "maplibre-gl";
 import type { Feature, LineString } from "geojson";
 import { config } from "./config";
 import { shortestAngle, type Track, type Sample } from "./gpx";
+import { mpsToKmh } from "./format";
 
 const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
+
+function hexToRgb(hex: string): [number, number, number] {
+  const h = hex.replace("#", "");
+  return [
+    parseInt(h.slice(0, 2), 16),
+    parseInt(h.slice(2, 4), 16),
+    parseInt(h.slice(4, 6), 16),
+  ];
+}
+
+// Map a speed (km/h) to a color by interpolating the configured corridor stops.
+// Below the first / above the last stop clamps to that stop's color.
+function speedColor(kmh: number): string {
+  const stops = config.speedColorStops;
+  if (kmh <= stops[0].kmh) return stops[0].color;
+  const last = stops[stops.length - 1];
+  if (kmh >= last.kmh) return last.color;
+  for (let i = 1; i < stops.length; i++) {
+    if (kmh <= stops[i].kmh) {
+      const a = stops[i - 1];
+      const b = stops[i];
+      const t = (kmh - a.kmh) / (b.kmh - a.kmh);
+      const ca = hexToRgb(a.color);
+      const cb = hexToRgb(b.color);
+      const r = Math.round(ca[0] + (cb[0] - ca[0]) * t);
+      const g = Math.round(ca[1] + (cb[1] - ca[1]) * t);
+      const bl = Math.round(ca[2] + (cb[2] - ca[2]) * t);
+      return `rgb(${r},${g},${bl})`;
+    }
+  }
+  return last.color;
+}
 
 function buildStyle(): StyleSpecification {
   return {
@@ -71,18 +105,19 @@ function lineFeature(coords: [number, number][]): Feature<LineString> {
   };
 }
 
-// Solid trail up to `progress` (a line-progress fraction, 0..1), transparent
-// afterwards. Applied as a paint property on the static route line, so revealing
-// more of the trail never re-tiles geometry — only the gradient ramp updates.
-// The step stop must stay strictly inside (0, 1).
-function trailGradient(progress: number): maplibregl.ExpressionSpecification {
+// The route-cover gradient: transparent up to `progress` (a line-progress
+// fraction, so the speed-colored line below shows through the ridden part),
+// then the route-ahead color past it. Moving the reveal is a paint change on
+// static geometry — no re-tiling, so it tracks the marker with no gap at any
+// zoom. The step stop must stay strictly inside (0, 1).
+function coverGradient(progress: number): maplibregl.ExpressionSpecification {
   const p = clamp(progress, 0.0001, 0.9999);
   return [
     "step",
     ["line-progress"],
-    "#ff3b30",
-    p,
     "rgba(0,0,0,0)",
+    p,
+    config.routeAheadColor,
   ] as maplibregl.ExpressionSpecification;
 }
 
@@ -140,31 +175,32 @@ export class ReplayMap {
     this.lastTrailProgress = 0;
     const geojson = lineFeature(coords);
 
+    const speedGradient = this.speedGradient(track);
+
     if (this.map.getSource("route")) {
       (this.map.getSource("route") as maplibregl.GeoJSONSource).setData(geojson);
-      this.map.setPaintProperty("route-trail", "line-gradient", trailGradient(0));
+      this.map.setPaintProperty("route-speed", "line-gradient", speedGradient);
+      this.map.setPaintProperty("route-cover", "line-gradient", coverGradient(0));
     } else {
-      // `line-progress` (the trail reveal) is only defined when lineMetrics is on.
+      // `line-progress` (the speed gradient and the reveal) is only defined when
+      // lineMetrics is on.
       this.map.addSource("route", { type: "geojson", data: geojson, lineMetrics: true });
+      // Full route colored by speed, built once. The cover above hides the part
+      // ahead of the rider; revealing more is a paint change on this static
+      // geometry, so it tracks the marker with no re-tiling lag or gap.
       this.map.addLayer({
-        id: "route-bg",
+        id: "route-speed",
         type: "line",
         source: "route",
         layout: { "line-cap": "round", "line-join": "round" },
-        paint: {
-          "line-color": "#ffffff",
-          "line-width": 3,
-          "line-opacity": 0.35,
-        },
+        paint: { "line-width": 5, "line-gradient": speedGradient },
       });
-      // Moving the reveal is a paint change, not a geometry change, so it tracks
-      // the marker synchronously at any zoom (no worker re-tiling lag, hence no gap).
       this.map.addLayer({
-        id: "route-trail",
+        id: "route-cover",
         type: "line",
         source: "route",
         layout: { "line-cap": "round", "line-join": "round" },
-        paint: { "line-width": 5, "line-gradient": trailGradient(0) },
+        paint: { "line-width": 5, "line-gradient": coverGradient(0) },
       });
     }
 
@@ -194,7 +230,7 @@ export class ReplayMap {
     // advance p by less than one texel.
     if (Math.abs(p - this.lastTrailProgress) >= 1e-4) {
       this.lastTrailProgress = p;
-      this.map.setPaintProperty("route-trail", "line-gradient", trailGradient(p));
+      this.map.setPaintProperty("route-cover", "line-gradient", coverGradient(p));
     }
 
     if (this.follow) {
@@ -246,6 +282,34 @@ export class ReplayMap {
     const len2 = dx * dx + dy * dy;
     const t = len2 > 0 ? clamp(((h.x - a.x) * dx + (h.y - a.y) * dy) / len2, 0, 1) : 0;
     return prog[idx] + t * (prog[idx + 1] - prog[idx]);
+  }
+
+  // A static line-gradient coloring each vertex by its speed. Stops are keyed on
+  // cumProgress (the same line-progress metric MapLibre samples) and must be
+  // strictly ascending; coincident points are skipped. The line-gradient
+  // rasterizes to a bounded texture, so more than ~1024 stops buys nothing —
+  // downsample to keep the expression small.
+  private speedGradient(track: Track): maplibregl.ExpressionSpecification {
+    const prog = this.cumProgress;
+    const pts = track.points;
+    const CAP = 1024;
+    const minStep = 1 / CAP;
+    const stops: (number | string)[] = [];
+    let lastU = -1;
+    for (let i = 0; i < prog.length; i++) {
+      const u = clamp(prog[i], 0, 1);
+      const isLast = i === prog.length - 1;
+      if (!isLast && u - lastU < minStep) continue;
+      if (u <= lastU) continue;
+      stops.push(u, speedColor(mpsToKmh(pts[i].speed)));
+      lastU = u;
+    }
+    // interpolate needs at least two stops; degenerate tracks fall back to one color.
+    if (stops.length < 4) {
+      const c = (stops[1] as string) ?? speedColor(0);
+      return ["interpolate", ["linear"], ["line-progress"], 0, c, 1, c] as maplibregl.ExpressionSpecification;
+    }
+    return ["interpolate", ["linear"], ["line-progress"], ...stops] as maplibregl.ExpressionSpecification;
   }
 
   frameToTrack() {

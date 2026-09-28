@@ -24,4 +24,16 @@ export const config = {
     "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png",
   terrainAttribution: "Elevation: AWS Terrain Tiles / Mapzen",
   terrainExaggeration: 1.4,
+
+  // Trail speed coloring. The ridden trail is colored by speed (km/h): the
+  // color at a given speed is interpolated between the surrounding stops, and
+  // speeds below the first / above the last stop clamp to that stop's color.
+  // Edit these to set the corridor you care about.
+  speedColorStops: [
+    { kmh: 50, color: "#34c759" }, // green
+    { kmh: 90, color: "#0a84ff" }, // blue
+    { kmh: 120, color: "#ff3b30" }, // red
+  ] as { kmh: number; color: string }[],
+  // Color of the not-yet-ridden route ahead.
+  routeAheadColor: "rgba(60,64,72,0.9)",
 };
