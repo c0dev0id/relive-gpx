@@ -45,9 +45,10 @@ export const config = {
   // speeds below the first / above the last stop clamp to that stop's color.
   // Edit these to set the corridor you care about.
   speedColorStops: [
-    { kmh: 50, color: "#34c759" }, // green
-    { kmh: 90, color: "#0a84ff" }, // blue
-    { kmh: 120, color: "#ff3b30" }, // red
+    { kmh: 60, color: "#ff3b30" }, // red — at/below: dropped out of the corridor
+    { kmh: 75, color: "#ffd60a" }, // yellow — bottom of the corridor
+    { kmh: 90, color: "#34c759" }, // green — sweet spot
+    { kmh: 100, color: "#0a84ff" }, // blue — at/above: fast, no longer of interest
   ] as { kmh: number; color: string }[],
   // Color of the not-yet-ridden route ahead.
   routeAheadColor: "rgba(60,64,72,0.9)",
