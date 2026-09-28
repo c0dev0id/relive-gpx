@@ -1,0 +1,154 @@
+// uPlot chart builders. uPlot is imperative and extremely fast with dense
+// series, which is exactly what 4 Hz recordings produce.
+
+import uPlot from "uplot";
+import type { Track } from "./gpx";
+import { mpsToKmh } from "./format";
+
+const AXIS = "#8a8f98";
+const GRID = "rgba(255,255,255,0.06)";
+
+function baseAxis(): uPlot.Axis {
+  return {
+    stroke: AXIS,
+    grid: { stroke: GRID, width: 1 },
+    ticks: { stroke: GRID, width: 1 },
+    font: "11px system-ui, sans-serif",
+  };
+}
+
+// A vertical cursor line the caller moves as playback progresses.
+function cursorPlugin(getX: () => number): uPlot.Plugin {
+  return {
+    hooks: {
+      draw: (u) => {
+        const x = getX();
+        if (x == null || !Number.isFinite(x)) return;
+        const left = u.valToPos(x, "x", true);
+        if (left < u.bbox.left || left > u.bbox.left + u.bbox.width) return;
+        const { ctx } = u;
+        ctx.save();
+        ctx.beginPath();
+        ctx.strokeStyle = "#ffd60a";
+        ctx.lineWidth = 1.5;
+        ctx.moveTo(left, u.bbox.top);
+        ctx.lineTo(left, u.bbox.top + u.bbox.height);
+        ctx.stroke();
+        ctx.restore();
+      },
+    },
+  };
+}
+
+export interface Chart {
+  el: HTMLElement;
+  redraw(): void;
+  resize(w: number, h: number): void;
+  destroy(): void;
+}
+
+export function elevationChart(
+  track: Track,
+  w: number,
+  h: number,
+  getDistKm: () => number,
+): Chart {
+  const xs = track.points.map((p) => p.dist / 1000);
+  const ys = track.points.map((p) => p.ele);
+  const opts: uPlot.Options = {
+    width: w,
+    height: h,
+    title: "Altitude (m) / distance (km)",
+    cursor: { show: false },
+    legend: { show: false },
+    scales: { x: { time: false } },
+    axes: [baseAxis(), baseAxis()],
+    series: [
+      {},
+      {
+        stroke: "#34c759",
+        fill: "rgba(52,199,89,0.18)",
+        width: 1.5,
+        points: { show: false },
+      },
+    ],
+    plugins: [cursorPlugin(getDistKm)],
+  };
+  const u = new uPlot(opts, [xs, ys as number[]], undefined);
+  return chartHandle(u);
+}
+
+export function speedChart(
+  track: Track,
+  w: number,
+  h: number,
+  getTimeSec: () => number,
+): Chart {
+  const xs = track.points.map((p) => p.t);
+  const ys = track.points.map((p) => mpsToKmh(p.speed));
+  const opts: uPlot.Options = {
+    width: w,
+    height: h,
+    title: "Speed (km/h) / time (s)",
+    cursor: { show: false },
+    legend: { show: false },
+    scales: { x: { time: false } },
+    axes: [baseAxis(), baseAxis()],
+    series: [
+      {},
+      {
+        stroke: "#0a84ff",
+        fill: "rgba(10,132,255,0.18)",
+        width: 1.5,
+        points: { show: false },
+      },
+    ],
+    plugins: [cursorPlugin(getTimeSec)],
+  };
+  const u = new uPlot(opts, [xs, ys], undefined);
+  return chartHandle(u);
+}
+
+export function speedHistogram(track: Track, w: number, h: number): Chart {
+  const speeds = track.points.map((p) => mpsToKmh(p.speed));
+  const maxV = Math.max(10, Math.ceil(track.speedMax * 3.6));
+  const binCount = Math.min(24, Math.max(8, Math.round(maxV / 5)));
+  const binSize = maxV / binCount;
+  const bins = new Array(binCount).fill(0);
+  for (const v of speeds) {
+    const b = Math.min(binCount - 1, Math.floor(v / binSize));
+    bins[b] += 1;
+  }
+  const centers = bins.map((_, i) => (i + 0.5) * binSize);
+  const opts: uPlot.Options = {
+    width: w,
+    height: h,
+    title: "Speed distribution (km/h)",
+    cursor: { show: false },
+    legend: { show: false },
+    scales: { x: { time: false } },
+    axes: [baseAxis(), baseAxis()],
+    series: [
+      {},
+      {
+        stroke: "#ff9f0a",
+        fill: "rgba(255,159,10,0.5)",
+        width: 1,
+        paths: uPlot.paths.bars!({ size: [0.9, 100] }),
+        points: { show: false },
+      },
+    ],
+    plugins: [],
+  };
+  const u = new uPlot(opts, [centers, bins], undefined);
+  return chartHandle(u);
+}
+
+function chartHandle(u: uPlot): Chart {
+  return {
+    el: u.root,
+    redraw: () => u.redraw(false, false),
+    resize: (w, h) => u.setSize({ width: w, height: h }),
+    destroy: () => u.destroy(),
+  };
+}
