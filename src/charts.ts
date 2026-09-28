@@ -84,7 +84,9 @@ export function speedChart(
   h: number,
   getTimeSec: () => number,
 ): Chart {
-  const xs = track.points.map((p) => p.t);
+  // Play-time axis so the cursor aligns with the playback clock and breaks
+  // don't stretch the chart into a long flat dead zone.
+  const xs = track.points.map((p) => p.pt);
   const ys = track.points.map((p) => mpsToKmh(p.speed));
   const opts: uPlot.Options = {
     width: w,

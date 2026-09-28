@@ -19,8 +19,8 @@ export function createPlayback() {
     const dt = (now - lastWall) / 1000;
     lastWall = now;
     let next = time() + dt * speed();
-    if (next >= trk.duration) {
-      next = trk.duration;
+    if (next >= trk.playDuration) {
+      next = trk.playDuration;
       setTime(next);
       setPlaying(false);
       return;
@@ -32,7 +32,7 @@ export function createPlayback() {
   function play() {
     const trk = track();
     if (!trk) return;
-    if (time() >= trk.duration) setTime(0);
+    if (time() >= trk.playDuration) setTime(0);
     if (playing()) return;
     setPlaying(true);
     lastWall = performance.now();
@@ -51,7 +51,7 @@ export function createPlayback() {
   function seek(t: number) {
     const trk = track();
     if (!trk) return;
-    setTime(Math.max(0, Math.min(trk.duration, t)));
+    setTime(Math.max(0, Math.min(trk.playDuration, t)));
     lastWall = performance.now();
   }
 

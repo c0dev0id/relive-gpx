@@ -1,6 +1,6 @@
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { createPlayback } from "./playback";
-import { parseGpx, sampleAtTime, type Sample, type Track } from "./gpx";
+import { parseGpx, sampleAtPlayTime, type Sample, type Track } from "./gpx";
 import { ReplayMap } from "./map";
 import {
   elevationChart,
@@ -75,9 +75,9 @@ export default function App() {
     const track = pb.track();
     if (!track) return;
     const t = pb.time();
-    const s = sampleAtTime(track.points, t);
+    const s = sampleAtPlayTime(track.points, t);
     setSample(s);
-    cursor.t = t;
+    cursor.t = t; // play-time; matches the speed chart's x axis
     cursor.distKm = s.dist / 1000;
     const progress = track.totalDist > 0 ? s.dist / track.totalDist : 0;
     replay?.update(s, progress);
@@ -173,7 +173,7 @@ export default function App() {
                 <div class="stat">
                   <span class="label">Time</span>
                   <span class="val">
-                    {fmtTime(pb.time())}{" "}
+                    {fmtTime(sample()!.t)}{" "}
                     <span class="muted">/ {fmtTime(track.duration)}</span>
                   </span>
                 </div>
@@ -201,7 +201,7 @@ export default function App() {
                   class="scrubber"
                   type="range"
                   min={0}
-                  max={track.duration}
+                  max={track.playDuration}
                   step={0.05}
                   value={pb.time()}
                   onInput={(e) => pb.seek(Number(e.currentTarget.value))}

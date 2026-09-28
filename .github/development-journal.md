@@ -33,6 +33,21 @@ elapsed time.
   the scrubber write into one `time` signal; a binary-search sampler interpolates
   position/speed/heading at any instant. This is what makes 4 Hz data accurate.
 
+- **Two time axes with gap capping.** Real recordings contain long time gaps
+  because the receiver is switched off during breaks (the export also applies a
+  1 m distance filter, so a stationary receiver adds almost no points). Each
+  point keeps its real time `t` and a play-time `pt` where every inter-point gap
+  is capped at `DEFAULT_MAX_GAP` (20 s). Playback, the scrubber, and the speed
+  chart run on `pt`, so a break becomes a ~20 s hold instead of freezing the
+  replay for hours; the telemetry clock shows the real `t`, which jumps forward
+  across a break. On a sample 340 km ride this collapsed ~4.3 h of breaks, taking
+  playback from 590 min down to 333 min.
+
+- **Single-pass leaf collection when parsing.** Reading each field with its own
+  `querySelectorAll` was O(points × fields) and cost ~2 s on a 74 k-point file.
+  The parser now walks each track point's subtree once, collecting leaf text by
+  local name into a reused object.
+
 - **Trail via `line-gradient`, not growing geometry.** MapLibre has no
   `line-trim-offset` (that is a Mapbox feature). The full route is drawn once as a
   line with `lineMetrics`; the traveled portion is revealed by updating a
