@@ -1,0 +1,24 @@
+{
+  "name": "live-gpx",
+  "version": "0.1.0",
+  "description": "Replay a recorded GPX track on a 3D map with telemetry panels.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "sample": "node scripts/make-sample.mjs",
+    "test": "node scripts/test-sampler.ts && node scripts/test-parse.ts"
+  },
+  "dependencies": {
+    "maplibre-gl": "^5.6.0",
+    "solid-js": "^1.9.3",
+    "uplot": "^1.6.31"
+  },
+  "devDependencies": {
+    "linkedom": "^0.18.13",
+    "typescript": "^5.6.3",
+    "vite": "^6.0.0",
+    "vite-plugin-solid": "^2.11.0"
+  }
+}
