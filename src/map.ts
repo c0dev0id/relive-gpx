@@ -225,10 +225,17 @@ export class ReplayMap {
     this.rider.setLngLat([sample.lon, sample.lat]).setRotation(sample.heading);
 
     const p = this.progressAt(sample.index, sample.lon, sample.lat);
-    // Skip the gradient re-parse when the reveal hasn't moved past the line-
-    // gradient texture's visible resolution — over a long ride most frames
-    // advance p by less than one texel.
-    if (Math.abs(p - this.lastTrailProgress) >= 1e-4) {
+    // Repaint the reveal only when its boundary would move at least ~1 screen
+    // pixel. The threshold must be in pixels, not a fixed fraction of the line:
+    // a fixed fraction has a physical size that scales with the track, so on a
+    // long ride it would jump tens of meters between updates. progress is a
+    // fraction of the whole line, so 1px of movement is metersPerPixel over the
+    // total length.
+    const metersPerPixel =
+      (40075016.686 * Math.cos((sample.lat * Math.PI) / 180)) /
+      (512 * 2 ** this.map.getZoom());
+    const threshold = metersPerPixel / (this.track.totalDist || 1);
+    if (Math.abs(p - this.lastTrailProgress) >= threshold) {
       this.lastTrailProgress = p;
       this.map.setPaintProperty("route-cover", "line-gradient", coverGradient(p));
     }
