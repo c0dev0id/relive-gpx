@@ -267,7 +267,10 @@ export class ReplayMap {
       this.map.setPaintProperty("route-cover", "line-gradient", coverGradient(p));
     }
 
-    if (this.follow) {
+    // jumpTo cancels any running camera animation, so while one is in progress
+    // (the navigation control's zoom and compass buttons, drag inertia) the
+    // follow step is skipped; the low-pass catches up once it ends.
+    if (this.follow && !this.map.isEasing()) {
       // Low-pass both bearing and center so the chase camera drifts rather than
       // locking on: a gentle suggestion of a follow, not a rigid one.
       const diff = shortestAngle(this.smoothedBearing, sample.heading);
