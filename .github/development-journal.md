@@ -72,7 +72,25 @@ elapsed time.
   fight the animation loop. Smoothing makes the chase camera drift gently
   instead of snapping on every squiggle in the track. Zoom is set only on the
   first follow frame after a load, so the user can pull the camera back, which
-  also stops it clipping into hills at high pitch.
+  also stops it clipping into hills at high pitch. The top padding that keeps
+  the rider low in the frame is 30% of the map height rather than a fixed pixel
+  value, which on a landscape phone put the rider under the controls.
+
+- **Overlays in one flex column.** The notice, telemetry, panels and controls
+  are laid out in a single column above the map, and the panels row takes the
+  remaining height. Absolutely positioned panels with fixed offsets overlapped
+  on phone screens (a `100vh - 320px` max-height went negative in landscape).
+
+- **Collapsible panels via `<details>`.** Charts and legend collapse to a small
+  button using the native element (the same one MapLibre uses for its compact
+  attribution), which brings keyboard and accessibility handling for free. They
+  start open on large screens and collapsed on phones. Charts are built only
+  while their panel is open, because a closed panel has no width to size them
+  to.
+
+- **Attribution under the navigation control.** The playback controls span the
+  bottom edge, so the attribution moved from its default bottom-right corner to
+  the top-right, below the zoom and compass buttons.
 
 - **Chart cursor as a DOM overlay.** The playback cursor is a positioned line
   over each uPlot plot, moved with a CSS transform. Redrawing the canvas every
@@ -117,3 +135,6 @@ elapsed time.
   cursor, and a moving-speed distribution histogram.
 - Transport controls: play/pause, timeline scrubber, 1x/2x/4x/8x speed.
 - Keyboard: Space plays/pauses, Left/Right seek 5 s, Up/Down zoom the map.
+- Charts and legend panels collapse to buttons.
+- Phone layout (portrait and landscape): compact telemetry row, charts and
+  legend collapsed by default, controls wrapping onto a second row.

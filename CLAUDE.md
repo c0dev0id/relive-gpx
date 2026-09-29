@@ -51,11 +51,19 @@ Each `TrackPoint` has real time `t` and play-time `pt`. In play-time every inter
 - `line-progress` is cumulative distance in Mercator space. `ReplayMap` precomputes its own Mercator `cumProgress` and projects the rider onto the current segment. Using the geodesic `TrackPoint.dist` instead makes the reveal drift away from the marker on long tracks.
 - `line-gradient` stops must be strictly ascending; the speed gradient is downsampled to about 1024 stops.
 - The rider is a DOM `maplibregl.Marker`, not a symbol layer, because symbol placement is throttled and moves in visible steps when updated every frame.
-- Follow camera: `jumpTo` with low-pass-filtered center and bearing (`easeTo` would fight the rAF loop). Zoom is set only on the first follow frame after a load (`framedFollow`), so manual zoom sticks.
+- Follow camera: `jumpTo` with low-pass-filtered center and bearing (`easeTo` would fight the rAF loop). Zoom is set only on the first follow frame after a load (`framedFollow`), so manual zoom sticks. The top padding is a share of the map height (`CHASE_TOP_PADDING`, refreshed on resize), so the rider stays clear of the controls on short screens.
+- The navigation and attribution controls both sit in MapLibre's top-right corner, outside the overlay layer; the bottom edge belongs to the playback controls.
+
+### Overlay layout (`src/App.tsx`, `src/styles.css`)
+
+All overlays live in one `.hud` flex column above the map: notice, telemetry, a `.panels` row, controls. The panels row takes whatever height is left, so panels size to the available space; don't go back to absolutely positioned panels with viewport-based offsets, which overlapped on phones.
+
+- The charts and legend panels are `<details>` elements that collapse to a button. They start open unless `COMPACT_QUERY` matches (phones). `COMPACT_QUERY` in App.tsx and the compact media query in styles.css must stay identical.
+- Compact screens: the telemetry wraps into a row and stops 40px short of the right edge to clear the map controls, the notice moves above the playback controls, and the controls wrap onto a second row whenever the scrubber's 200px flex basis no longer fits.
 
 ### Charts (`src/charts.ts`)
 
-uPlot, built imperatively. The playback cursor is a DOM line over the plot area moved by a CSS transform; `Chart.redraw()` only moves that line and never re-strokes the series. App.tsx rebuilds all charts on window resize (debounced). The histogram counts moving speeds only (>= 5 km/h) and caps its axis at the 99th percentile so GPS spikes don't flatten it.
+uPlot, built imperatively. The playback cursor is a DOM line over the plot area moved by a CSS transform; `Chart.redraw()` only moves that line and never re-strokes the series. App.tsx rebuilds all charts on window resize (debounced), but only while the charts panel is open: a closed `<details>` has no width to size them to, so `buildCharts` just clears them and the panel's `toggle` handler builds them on open. The histogram counts moving speeds only (>= 5 km/h) and caps its axis at the 99th percentile so GPS spikes don't flatten it.
 
 ### Config (`src/config.ts`)
 
