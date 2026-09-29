@@ -12,7 +12,7 @@ import { fmtDist, fmtSpeed, fmtTime } from "./format";
 import { config } from "./config";
 
 // Phone-sized viewports: portrait (narrow) or landscape (short). Must match the
-// compact-layout media query in styles.css.
+// breakpoints of the compact-layout media queries in styles.css.
 const COMPACT_QUERY = "(max-width: 640px), (max-height: 500px)";
 
 const CHART_HEIGHT = 108;

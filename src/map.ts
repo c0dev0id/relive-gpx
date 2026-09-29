@@ -281,7 +281,6 @@ export class ReplayMap {
         // Only set the zoom once, to establish the chase framing; leaving it out
         // afterwards preserves whatever zoom the user has dialed in.
         ...(this.framedFollow ? {} : { zoom: Math.max(this.map.getZoom(), 15) }),
-        // Push the rider toward the bottom of the frame so the road ahead shows.
         padding: { top: this.chaseTopPadding, bottom: 0, left: 0, right: 0 },
       });
       this.framedFollow = true;

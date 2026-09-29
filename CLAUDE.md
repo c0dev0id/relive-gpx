@@ -58,7 +58,7 @@ Each `TrackPoint` has real time `t` and play-time `pt`. In play-time every inter
 
 All overlays live in one `.hud` flex column above the map: notice, telemetry, a `.panels` row, controls. The panels row takes whatever height is left, so panels size to the available space; don't go back to absolutely positioned panels with viewport-based offsets, which overlapped on phones.
 
-- The charts and legend panels are `<details>` elements that collapse to a button. They start open unless `COMPACT_QUERY` matches (phones). `COMPACT_QUERY` in App.tsx and the compact media query in styles.css must stay identical.
+- The charts and legend panels are `<details>` elements that collapse to a button. They start open unless `COMPACT_QUERY` matches (phones). `COMPACT_QUERY` in App.tsx and the breakpoints of the compact media queries in styles.css must stay identical.
 - Compact screens: the telemetry wraps into a row and stops 40px short of the right edge to clear the map controls, the notice moves above the playback controls, and the controls wrap onto a second row whenever the scrubber's 200px flex basis no longer fits.
 
 ### Charts (`src/charts.ts`)

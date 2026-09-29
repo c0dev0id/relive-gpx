@@ -116,10 +116,6 @@ body,
   cursor: pointer;
   user-select: none;
   padding: 8px 12px;
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--muted);
   white-space: nowrap;
 }
 .panel > summary::-webkit-details-marker {
@@ -148,7 +144,9 @@ body,
   flex-direction: column;
   line-height: 1.1;
 }
-.stat .label {
+/* Small uppercase labels: telemetry field names and panel titles. */
+.stat .label,
+.panel > summary {
   font-size: 0.72rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -176,7 +174,7 @@ body,
 /* Notice banner ---------------------------------------------------------- */
 .notice {
   align-self: center;
-  max-width: min(560px, 100%);
+  max-width: 560px;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -216,9 +214,8 @@ body,
 /* Charts ----------------------------------------------------------------- */
 .charts-panel {
   /* Sized by the row, not by the charts inside, so a resize can shrink it
-     before the charts are rebuilt at the new width. */
+     before the charts are resized to the new width. */
   min-width: 0;
-  max-width: 100%;
   max-height: 100%;
   overflow-y: auto;
 }
@@ -320,7 +317,8 @@ body,
 }
 
 /* Compact layout (phones) ------------------------------------------------ */
-/* Keep in sync with COMPACT_QUERY in App.tsx. */
+/* Keep the breakpoints of this and the narrow block below in sync with
+   COMPACT_QUERY in App.tsx. */
 @media (max-width: 640px), (max-height: 500px) {
   .hud {
     gap: 8px;
@@ -373,7 +371,6 @@ body,
 @media (max-width: 640px) {
   .charts-panel[open] {
     flex: 1;
-    width: auto;
   }
   .charts-panel[open] ~ .legend {
     display: none;
