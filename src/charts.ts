@@ -17,6 +17,35 @@ function baseAxis(): uPlot.Axis {
   };
 }
 
+// uPlot labels only the multiples of its tick step that fall inside the scale
+// and does not snap the scale to them, so on these short charts the lowest or
+// highest value often ends up unlabeled. Instead, the y range is rounded out to
+// a nice step and exactly its two ends are labeled; the plots are too short for
+// labels in between. fromZero keeps 0 in the range (speeds, counts).
+function yAxis(fromZero: boolean): { scale: uPlot.Scale; axis: uPlot.Axis } {
+  return {
+    scale: {
+      range: (_u, dmin, dmax) => {
+        if (!Number.isFinite(dmin) || !Number.isFinite(dmax)) return [0, 1];
+        if (fromZero) dmin = Math.min(0, dmin);
+        const step = niceStep((dmax - dmin) / 4);
+        const min = Math.floor(dmin / step) * step;
+        const max = Math.ceil(dmax / step) * step;
+        return [min, max > min ? max : min + step];
+      },
+    },
+    axis: { ...baseAxis(), splits: (_u, _i, min, max) => [min, max] },
+  };
+}
+
+// Smallest of 1, 2, 5 x 10^n that is >= raw, and at least 1.
+function niceStep(raw: number): number {
+  if (!(raw > 1)) return 1;
+  const mag = 10 ** Math.floor(Math.log10(raw));
+  for (const m of [1, 2, 5]) if (m * mag >= raw) return m * mag;
+  return 10 * mag;
+}
+
 export interface Chart {
   el: HTMLElement;
   redraw(): void;
@@ -32,14 +61,15 @@ export function elevationChart(
 ): Chart {
   const xs = track.points.map((p) => p.dist / 1000);
   const ys = track.points.map((p) => p.ele);
+  const y = yAxis(false);
   const opts: uPlot.Options = {
     width: w,
     height: h,
     title: "Altitude (m) / distance (km)",
     cursor: { show: false },
     legend: { show: false },
-    scales: { x: { time: false } },
-    axes: [baseAxis(), baseAxis()],
+    scales: { x: { time: false }, y: y.scale },
+    axes: [baseAxis(), y.axis],
     series: [
       {},
       {
@@ -64,14 +94,15 @@ export function speedChart(
   // don't stretch the chart into a long flat dead zone.
   const xs = track.points.map((p) => p.pt);
   const ys = track.points.map((p) => mpsToKmh(p.speed));
+  const y = yAxis(true);
   const opts: uPlot.Options = {
     width: w,
     height: h,
     title: "Speed (km/h) / time (s)",
     cursor: { show: false },
     legend: { show: false },
-    scales: { x: { time: false } },
-    axes: [baseAxis(), baseAxis()],
+    scales: { x: { time: false }, y: y.scale },
+    axes: [baseAxis(), y.axis],
     series: [
       {},
       {
@@ -110,14 +141,15 @@ export function speedHistogram(track: Track, w: number, h: number): Chart {
     bins[b] += 1;
   }
   const centers = bins.map((_, i) => MOVING_MIN_KMH + (i + 0.5) * binSize);
+  const y = yAxis(true);
   const opts: uPlot.Options = {
     width: w,
     height: h,
     title: "Moving speed distribution (km/h)",
     cursor: { show: false },
     legend: { show: false },
-    scales: { x: { time: false } },
-    axes: [baseAxis(), baseAxis()],
+    scales: { x: { time: false }, y: y.scale },
+    axes: [baseAxis(), y.axis],
     series: [
       {},
       {
