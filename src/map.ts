@@ -154,10 +154,13 @@ export class ReplayMap {
       center: [0, 0],
       zoom: 1,
       pitch: 60,
-      attributionControl: { compact: true },
+      // Added below the navigation control instead: its default bottom-right
+      // spot is covered by the playback controls.
+      attributionControl: false,
       maxPitch: 85,
     });
     this.map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right");
+    this.map.addControl(new maplibregl.AttributionControl({ compact: true }), "top-right");
 
     this.rider = new maplibregl.Marker({
       element: makeRiderElement(),
