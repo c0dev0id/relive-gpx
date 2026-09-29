@@ -348,14 +348,21 @@ body,
   .stat .val {
     font-size: 0.95rem;
   }
+  /* The notice moves down to just above the playback controls. At the top it
+     would push the telemetry into the map controls in the top-right corner. */
   .notice {
-    align-self: flex-start;
-    max-width: calc(100% - 40px);
+    order: 1;
+    align-self: stretch;
+    max-width: none;
+  }
+  .notice > span {
+    flex: 1;
   }
   .legend {
     align-self: flex-end;
   }
   .controls {
+    order: 2;
     gap: 8px;
     padding: 8px 10px;
   }
