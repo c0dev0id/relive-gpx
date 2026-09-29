@@ -12,6 +12,12 @@ import { mpsToKmh } from "./format";
 
 const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
 
+// Share of the map height kept clear above the rider in follow mode, which puts
+// the rider in the lower part of the frame with the road ahead in view. It is
+// relative because a fixed pixel offset pushed the rider under the playback
+// controls on short (landscape phone) screens.
+const CHASE_TOP_PADDING = 0.3;
+
 function hexToRgb(hex: string): [number, number, number] {
   const h = hex.replace("#", "");
   return [
@@ -140,6 +146,9 @@ export class ReplayMap {
   // that the user's zoom is left alone so they can pull the camera back (which
   // also stops it clipping into hills at high pitch).
   private framedFollow = false;
+  // Follow-mode top padding in pixels, updated on resize rather than measured
+  // every frame.
+  private chaseTopPadding = 0;
   private ready = false;
   private smoothedBearing = 0;
   private smoothLon = 0;
@@ -168,6 +177,12 @@ export class ReplayMap {
       pitchAlignment: "map",
       subpixelPositioning: true,
     });
+
+    const measureChasePadding = () => {
+      this.chaseTopPadding = Math.round(container.clientHeight * CHASE_TOP_PADDING);
+    };
+    measureChasePadding();
+    this.map.on("resize", measureChasePadding);
 
     this.map.on("load", () => {
       this.ready = true;
@@ -266,8 +281,8 @@ export class ReplayMap {
         // Only set the zoom once, to establish the chase framing; leaving it out
         // afterwards preserves whatever zoom the user has dialed in.
         ...(this.framedFollow ? {} : { zoom: Math.max(this.map.getZoom(), 15) }),
-        // Push the rider toward the lower third so we see the road ahead.
-        padding: { top: 260, bottom: 0, left: 0, right: 0 },
+        // Push the rider toward the bottom of the frame so the road ahead shows.
+        padding: { top: this.chaseTopPadding, bottom: 0, left: 0, right: 0 },
       });
       this.framedFollow = true;
     }
