@@ -154,32 +154,27 @@ function chartHandle(u: uPlot, getX?: () => number): Chart {
     });
     u.over.appendChild(cursor);
   }
-  // Cached so moveCursor doesn't force a layout read every frame; the plot width
-  // only changes on resize.
-  let plotWidth = u.over.clientWidth;
   const moveCursor = () => {
     if (!cursor || !getX) return;
     const x = getX();
-    if (x == null || !Number.isFinite(x)) {
-      cursor.style.display = "none";
-      return;
-    }
-    const left = u.valToPos(x, "x");
-    if (left < 0 || left > plotWidth) {
+    // Hide the line outside the plotted range. The range is unset until uPlot's
+    // first draw.
+    const { min, max } = u.scales.x;
+    if (!Number.isFinite(x) || min == null || max == null || x < min || x > max) {
       cursor.style.display = "none";
       return;
     }
     cursor.style.display = "";
-    cursor.style.transform = `translateX(${left}px)`;
+    cursor.style.transform = `translateX(${u.valToPos(x, "x")}px)`;
   };
+  // uPlot lays out and draws in a microtask after construction, and again after
+  // a resize; reposition the line after each draw instead of waiting for the
+  // next playback update, which never comes while paused.
+  if (getX) u.hooks.draw = [...(u.hooks.draw ?? []), moveCursor];
   return {
     el: u.root,
     redraw: moveCursor,
-    resize: (w, h) => {
-      u.setSize({ width: w, height: h });
-      plotWidth = u.over.clientWidth;
-      moveCursor();
-    },
+    resize: (w, h) => u.setSize({ width: w, height: h }),
     destroy: () => u.destroy(),
   };
 }
