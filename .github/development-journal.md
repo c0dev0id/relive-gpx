@@ -23,8 +23,8 @@ elapsed time.
 - **Map:** MapLibre GL JS 5. Satellite imagery (Esri World Imagery) draped over
   AWS "terrarium" DEM terrain. No API key required.
 - **Charts:** uPlot. Chosen for its performance with dense time series.
-- **Testing:** Node 24 native TypeScript type-stripping runs the test scripts
-  directly; linkedom provides a DOM for parser tests.
+- **Testing:** Node's native TypeScript type stripping (Node 22.18 or later)
+  runs the test scripts directly; linkedom provides a DOM for parser tests.
 
 ## Key decisions
 
@@ -49,15 +49,43 @@ elapsed time.
   local name into a reused object.
 
 - **Trail via `line-gradient`, not growing geometry.** MapLibre has no
-  `line-trim-offset` (that is a Mapbox feature). The full route is drawn once as a
-  line with `lineMetrics`; the traveled portion is revealed by updating a
-  `line-gradient` step expression over `line-progress` each frame. This avoids
-  rebuilding a large GeoJSON coordinate array on every frame.
+  `line-trim-offset` (that is a Mapbox feature). The full route is drawn once,
+  with `lineMetrics`, as two layers: a static line whose `line-gradient` colors
+  each vertex by speed, and a cover line on top whose `line-gradient` is a step
+  over `line-progress`, transparent behind the rider and dim ahead. Advancing
+  the trail is a single paint-property update, so no GeoJSON is rebuilt per
+  frame. The update is skipped until the reveal would move about one screen
+  pixel; a fixed fraction of the line would jump tens of meters on long rides.
 
-- **Camera uses `jumpTo` with a low-pass-smoothed bearing.** Position is already
-  interpolated smoothly by the sampler, so per-frame `easeTo` would fight the
-  animation loop. The bearing is smoothed so the chase camera swings gently
-  instead of snapping on every squiggle in the track.
+- **Reveal position in Mercator space.** `line-progress` measures cumulative
+  distance in projected (Mercator) space, not geodesic distance. The map
+  precomputes a matching Mercator progress per vertex and projects the rider
+  onto the current segment, so the reveal cannot drift from the marker.
+
+- **Rider as a DOM marker, not a symbol layer.** Symbol placement is recomputed
+  on a throttle, so a symbol moved every frame renders in visible steps. A
+  `maplibregl.Marker` updates its CSS transform on every map move and is
+  projected onto the terrain surface.
+
+- **Camera uses `jumpTo` with a low-pass-smoothed center and bearing.** Position
+  is already interpolated smoothly by the sampler, so per-frame `easeTo` would
+  fight the animation loop. Smoothing makes the chase camera drift gently
+  instead of snapping on every squiggle in the track. Zoom is set only on the
+  first follow frame after a load, so the user can pull the camera back, which
+  also stops it clipping into hills at high pitch.
+
+- **Chart cursor as a DOM overlay.** The playback cursor is a positioned line
+  over each uPlot plot, moved with a CSS transform. Redrawing the canvas every
+  frame would re-stroke tens of thousands of points.
+
+- **Speed histogram covers moving speeds only.** Samples below 5 km/h form a
+  large stationary mass near zero that would dwarf the riding-speed spread. The
+  axis is capped at the 99th percentile, not the maximum, because a single GPS
+  glitch can spike the maximum to thousands of km/h.
+
+- **Recorded track preferred over planned route.** When a file has both, only
+  `<trkpt>` points are used; `<rtept>` is a fallback for route-only files, which
+  get a warning that speed and timing are synthetic.
 
 - **Namespace-agnostic GPX parsing.** GPX elements live in the GPX default
   namespace, so CSS type selectors like `querySelector("trkpt")` do not match them
@@ -67,16 +95,25 @@ elapsed time.
 
 - **No API keys / open tile sources.** Default imagery and terrain come from
   keyless providers so the tool works as a drop-in static page. Tile sources are
-  isolated in `src/config.ts` for easy swapping to a vendor style.
+  isolated in `src/config.ts` for easy swapping to a vendor style. Two
+  alternatives were tried and dropped for the public deployment: MapTiler's
+  free tier suspends the map with HTTP 429 once its monthly quota is used up,
+  which a pitched 3D replay reaches quickly, and Google's `mt*.google.com`
+  tiles are undocumented and not permitted for public use. Google remains in
+  `config.ts` as a commented-out option for local builds.
 
 ## Core features
 
-- Drag-and-drop or file-picker GPX upload with error reporting.
+- Drag-and-drop or file-picker GPX upload with error reporting, plus a
+  dismissible notice for route-only files and files without timestamps.
 - 3D terrain map with satellite imagery.
-- Moving rider marker (heading-aligned) with a growing trail over the dim full route.
-- Slow-follow chase camera (toggleable) and a "fit route" control.
+- Moving rider marker (heading-aligned); the ridden trail is colored by speed,
+  the route ahead is drawn dim. A legend shows the speed color scale.
+- Slow-follow chase camera (toggleable, keeps the user's zoom) and a "fit route"
+  control.
 - Telemetry panel: current speed, altitude, distance, elapsed/total time, plus
   HR and power when present in the file.
 - Charts: altitude-over-distance and speed-over-time with a synced playback
-  cursor, and a speed-distribution histogram.
+  cursor, and a moving-speed distribution histogram.
 - Transport controls: play/pause, timeline scrubber, 1x/2x/4x/8x speed.
+- Keyboard: Space plays/pauses, Left/Right seek 5 s, Up/Down zoom the map.
