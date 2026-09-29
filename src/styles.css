@@ -81,20 +81,66 @@ body,
   max-width: 380px;
 }
 
-/* Telemetry -------------------------------------------------------------- */
-.telemetry {
+/* HUD -------------------------------------------------------------------- */
+/* Overlay layer above the map, laid out as one column: notice, telemetry, the
+   collapsible panels, controls. The panels row gets whatever height is left,
+   so no panel depends on fixed offsets. Only the panels take pointer input;
+   the space between them passes through to the map. */
+.hud {
   position: absolute;
-  top: 16px;
-  left: 16px;
+  inset: 0;
   z-index: 10;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 16px 18px;
+  gap: 12px;
+  padding: 16px;
+  pointer-events: none;
+}
+.hud .panel,
+.hud .notice {
+  pointer-events: auto;
+  /* No double-tap zoom on repeated taps (play/pause, speed buttons). */
+  touch-action: manipulation;
+}
+.panel {
   background: var(--panel);
   backdrop-filter: blur(12px);
   border: 1px solid var(--border);
   border-radius: 14px;
+}
+
+/* Collapsible panels (<details>): the summary is the panel title while open,
+   and the whole panel, shrunk to a small button, while collapsed. */
+.panel > summary {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+  padding: 8px 12px;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.panel > summary::-webkit-details-marker {
+  display: none;
+}
+.panel > summary::before {
+  content: "▸";
+  display: inline-block;
+  width: 1.1em;
+}
+.panel[open] > summary::before {
+  content: "▾";
+}
+
+/* Telemetry -------------------------------------------------------------- */
+.telemetry {
+  align-self: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px;
   min-width: 150px;
 }
 .stat {
@@ -129,12 +175,8 @@ body,
 
 /* Notice banner ---------------------------------------------------------- */
 .notice {
-  position: absolute;
-  top: 16px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 15;
-  max-width: min(560px, calc(100vw - 32px));
+  align-self: center;
+  max-width: min(560px, 100%);
   display: flex;
   align-items: center;
   gap: 12px;
@@ -161,37 +203,65 @@ body,
   opacity: 1;
 }
 
+/* Collapsible panels row ------------------------------------------------- */
+.panels {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* Charts ----------------------------------------------------------------- */
+.charts-panel {
+  /* Sized by the row, not by the charts inside, so a resize can shrink it
+     before the charts are rebuilt at the new width. */
+  min-width: 0;
+  max-width: 100%;
+  max-height: 100%;
+  overflow-y: auto;
+}
+.charts-panel[open] {
+  width: 320px;
+}
+/* Keep the title, which collapses the panel, in view while the charts scroll. */
+.charts-panel[open] > summary {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--panel-solid);
+}
+.charts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 10px 10px;
+}
+.charts .u-title {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
 /* Speed legend ----------------------------------------------------------- */
 .legend {
-  position: absolute;
-  top: 50%;
-  right: 16px;
-  transform: translateY(-50%);
-  z-index: 10;
-  width: 180px;
-  padding: 12px 14px;
-  background: var(--panel);
-  backdrop-filter: blur(12px);
-  border: 1px solid var(--border);
-  border-radius: 14px;
+  align-self: center;
 }
-.legend-title {
-  display: block;
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--muted);
-  margin-bottom: 8px;
+.legend[open] {
+  width: 180px;
+  padding-bottom: 12px;
 }
 .legend-bar {
   height: 10px;
+  margin: 0 14px;
   border-radius: 5px;
   border: 1px solid var(--border);
 }
 .legend-ticks {
   position: relative;
   height: 1.1em;
-  margin-top: 4px;
+  margin: 4px 14px 0;
 }
 .legend-tick {
   position: absolute;
@@ -202,46 +272,13 @@ body,
   white-space: nowrap;
 }
 
-/* Charts ----------------------------------------------------------------- */
-.charts {
-  position: absolute;
-  left: 16px;
-  bottom: 88px;
-  z-index: 10;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px;
-  background: var(--panel);
-  backdrop-filter: blur(12px);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  width: 320px;
-  max-width: calc(100vw - 32px);
-  max-height: calc(100vh - 320px);
-  overflow-y: auto;
-}
-.charts .u-title {
-  color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 500;
-}
-
 /* Controls --------------------------------------------------------------- */
 .controls {
-  position: absolute;
-  left: 16px;
-  right: 16px;
-  bottom: 16px;
-  z-index: 10;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   padding: 10px 14px;
-  background: var(--panel);
-  backdrop-filter: blur(12px);
-  border: 1px solid var(--border);
-  border-radius: 14px;
 }
 .ctrl {
   background: var(--panel-solid);
@@ -270,15 +307,68 @@ body,
   gap: 4px;
 }
 .scrubber {
-  flex: 1;
+  /* The basis decides when the controls wrap: once a row can't hold the
+     scrubber at this width, the buttons move to a second row. */
+  flex: 1 1 200px;
+  min-width: 0;
   accent-color: var(--accent);
   cursor: pointer;
 }
+/* On a wrapped second row, keep Follow and Fit at the right edge. */
+.follow {
+  margin-left: auto;
+}
 
-@media (max-width: 720px) {
-  .charts {
-    left: 16px;
-    right: 16px;
-    bottom: 84px;
+/* Compact layout (phones) ------------------------------------------------ */
+/* Keep in sync with COMPACT_QUERY in App.tsx. */
+@media (max-width: 640px), (max-height: 500px) {
+  .hud {
+    gap: 8px;
+    padding: 10px;
+  }
+  /* Telemetry as a wrapping row instead of a column, stopping short of the
+     map's zoom/compass control in the top-right corner. */
+  .telemetry {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 6px 14px;
+    padding: 8px 12px;
+    min-width: 0;
+    max-width: calc(100% - 40px);
+  }
+  .stat.big {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 4px;
+  }
+  .stat.big .val {
+    font-size: 1.8rem;
+  }
+  .stat .val {
+    font-size: 0.95rem;
+  }
+  .notice {
+    align-self: flex-start;
+    max-width: calc(100% - 40px);
+  }
+  .legend {
+    align-self: flex-end;
+  }
+  .controls {
+    gap: 8px;
+    padding: 8px 10px;
+  }
+}
+
+/* Narrow (portrait) phones: an open charts panel takes the full width, and
+   the legend makes way until the charts are collapsed again. */
+@media (max-width: 640px) {
+  .charts-panel[open] {
+    flex: 1;
+    width: auto;
+  }
+  .charts-panel[open] ~ .legend {
+    display: none;
   }
 }

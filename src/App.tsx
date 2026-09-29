@@ -11,6 +11,10 @@ import {
 import { fmtDist, fmtSpeed, fmtTime } from "./format";
 import { config } from "./config";
 
+// Phone-sized viewports: portrait (narrow) or landscape (short). Must match the
+// compact-layout media query in styles.css.
+const COMPACT_QUERY = "(max-width: 640px), (max-height: 500px)";
+
 export default function App() {
   const pb = createPlayback();
   const [error, setError] = createSignal("");
@@ -20,9 +24,14 @@ export default function App() {
   const [dragOver, setDragOver] = createSignal(false);
 
   let mapContainer!: HTMLDivElement;
+  let chartsPanel!: HTMLDetailsElement;
   let chartsContainer!: HTMLDivElement;
   let replay: ReplayMap | undefined;
   let charts: Chart[] = [];
+
+  // The charts and legend panels start collapsed on phones, where they would
+  // cover most of the map.
+  const panelsStartOpen = !window.matchMedia(COMPACT_QUERY).matches;
 
   // Mutable cursor read by chart plugins each frame (avoids closure churn).
   const cursor = { t: 0, distKm: 0 };
@@ -62,7 +71,11 @@ export default function App() {
 
   function buildCharts(track: Track) {
     charts.forEach((c) => c.destroy());
+    charts = [];
     chartsContainer.innerHTML = "";
+    // A collapsed panel has no width to size the charts to; they are built
+    // when it opens instead.
+    if (!chartsPanel.open) return;
     // Vertical stack: every chart spans the panel's inner width.
     const each = Math.max(220, chartsContainer.clientWidth - 24);
     const h = 108;
@@ -135,7 +148,8 @@ export default function App() {
         tag === "INPUT" ||
         tag === "TEXTAREA" ||
         tag === "SELECT" ||
-        tag === "BUTTON"
+        tag === "BUTTON" ||
+        tag === "SUMMARY"
       )
         return;
       if (e.key === " ") {
@@ -162,19 +176,6 @@ export default function App() {
   return (
     <div class="app">
       <div class="map" ref={mapContainer} />
-
-      <Show when={pb.track() && notice()}>
-        <div class="notice">
-          <span>{notice()}</span>
-          <button
-            class="notice-close"
-            onClick={() => setNotice("")}
-            title="Dismiss"
-          >
-            ×
-          </button>
-        </div>
-      </Show>
 
       <Show when={!pb.track()}>
         <div
@@ -220,8 +221,21 @@ export default function App() {
         {(() => {
           const track = pb.track()!;
           return (
-            <>
-              <div class="telemetry">
+            <div class="hud">
+              <Show when={notice()}>
+                <div class="notice">
+                  <span>{notice()}</span>
+                  <button
+                    class="notice-close"
+                    onClick={() => setNotice("")}
+                    title="Dismiss"
+                  >
+                    ×
+                  </button>
+                </div>
+              </Show>
+
+              <div class="panel telemetry">
                 <div class="stat big">
                   <span class="val">{fmtSpeed(sample()!.speed)}</span>
                   <span class="unit">km/h</span>
@@ -258,36 +272,51 @@ export default function App() {
                 </Show>
               </div>
 
-              <div class="legend">
-                <span class="legend-title">Speed (km/h)</span>
-                <div class="legend-bar" style={{ background: legendGradient }} />
-                <div class="legend-ticks">
-                  {stops.map((s, i) => (
-                    <span
-                      class="legend-tick"
-                      style={{
-                        left: `${legendPct(s.kmh)}%`,
-                        transform:
-                          i === 0
-                            ? "translateX(0)"
-                            : i === stops.length - 1
-                              ? "translateX(-100%)"
-                              : "translateX(-50%)",
-                      }}
-                    >
-                      {i === 0
-                        ? `≤${s.kmh}`
-                        : i === stops.length - 1
-                          ? `≥${s.kmh}`
-                          : s.kmh}
-                    </span>
-                  ))}
-                </div>
+              <div class="panels">
+                <details
+                  class="panel charts-panel"
+                  ref={chartsPanel}
+                  open={panelsStartOpen}
+                  onToggle={() => {
+                    // Charts are only built while the panel is open (see
+                    // buildCharts), so opening it builds them if needed.
+                    if (chartsPanel.open && charts.length === 0)
+                      buildCharts(track);
+                  }}
+                >
+                  <summary>Charts</summary>
+                  <div class="charts" ref={chartsContainer} />
+                </details>
+
+                <details class="panel legend" open={panelsStartOpen}>
+                  <summary>Speed (km/h)</summary>
+                  <div class="legend-bar" style={{ background: legendGradient }} />
+                  <div class="legend-ticks">
+                    {stops.map((s, i) => (
+                      <span
+                        class="legend-tick"
+                        style={{
+                          left: `${legendPct(s.kmh)}%`,
+                          transform:
+                            i === 0
+                              ? "translateX(0)"
+                              : i === stops.length - 1
+                                ? "translateX(-100%)"
+                                : "translateX(-50%)",
+                        }}
+                      >
+                        {i === 0
+                          ? `≤${s.kmh}`
+                          : i === stops.length - 1
+                            ? `≥${s.kmh}`
+                            : s.kmh}
+                      </span>
+                    ))}
+                  </div>
+                </details>
               </div>
 
-              <div class="charts" ref={chartsContainer} />
-
-              <div class="controls">
+              <div class="panel controls">
                 <button class="ctrl" onClick={() => pb.toggle()}>
                   {pb.playing() ? "❚❚" : "▶"}
                 </button>
@@ -312,7 +341,7 @@ export default function App() {
                   ))}
                 </div>
                 <button
-                  class="ctrl sm"
+                  class="ctrl sm follow"
                   classList={{ active: follow() }}
                   onClick={() => setFollow((v) => !v)}
                   title="Chase camera follows the rider"
@@ -327,7 +356,7 @@ export default function App() {
                   Fit
                 </button>
               </div>
-            </>
+            </div>
           );
         })()}
       </Show>
