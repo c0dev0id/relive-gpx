@@ -184,6 +184,20 @@ export class ReplayMap {
     measureChasePadding();
     this.map.on("resize", measureChasePadding);
 
+    // A compact attribution control expands itself once its first attribution
+    // arrives and only collapses on the first drag; there is no option to start
+    // collapsed. These listeners run after the control's own (registered in
+    // addControl above), so collapse it, the way the drag does, as soon as it
+    // has switched to compact mode.
+    const attribEvents = ["styledata", "sourcedata", "terrain"] as const;
+    const collapseAttribution = () => {
+      const el = container.querySelector(".maplibregl-ctrl-attrib");
+      if (!el?.classList.contains("maplibregl-compact")) return;
+      el.classList.remove("maplibregl-compact-show");
+      attribEvents.forEach((e) => this.map.off(e, collapseAttribution));
+    };
+    attribEvents.forEach((e) => this.map.on(e, collapseAttribution));
+
     this.map.on("load", () => {
       this.ready = true;
       if (this.track) this.installTrack(this.track);
