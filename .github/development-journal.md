@@ -84,9 +84,10 @@ elapsed time.
 - **Collapsible panels via `<details>`.** Charts and legend collapse to a small
   button using the native element (the same one MapLibre uses for its compact
   attribution), which brings keyboard and accessibility handling for free. They
-  start open on large screens and collapsed on phones. Charts are built only
-  while their panel is open, because a closed panel has no width to size them
-  to.
+  start open on large screens and collapsed on phones. The charts follow their
+  container's width through a `ResizeObserver`: they are built when the panel
+  first has a width (a closed panel has none) and resized after that, which
+  replaced separate rebuild triggers for load, window resize and opening.
 
 - **Attribution under the navigation control.** The playback controls span the
   bottom edge, so the attribution moved from its default bottom-right corner to

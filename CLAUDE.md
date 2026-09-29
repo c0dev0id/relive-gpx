@@ -63,7 +63,7 @@ All overlays live in one `.hud` flex column above the map: notice, telemetry, a 
 
 ### Charts (`src/charts.ts`)
 
-uPlot, built imperatively. Charts are constructed detached and appended afterwards, and uPlot sets its scales and size in a microtask, so nothing in `chartHandle` may measure chart DOM at construction time. The playback cursor is a DOM line over the plot area moved by a CSS transform, bounded by the x scale's range and repositioned from a uPlot `draw` hook; `Chart.redraw()` only moves that line and never re-strokes the series. App.tsx rebuilds all charts on window resize (debounced), but only while the charts panel is open: a closed `<details>` has no width to size them to, so `buildCharts` just clears them and the panel's `toggle` handler builds them on open. The histogram counts moving speeds only (>= 5 km/h) and caps its axis at the 99th percentile so GPS spikes don't flatten it.
+uPlot, built imperatively (`makeChart`). uPlot sets its scales and size in a microtask after construction, with or without a target element, so nothing may measure a chart right after creating it. The playback cursor is a DOM line over the plot area moved by a CSS transform, bounded by the x scale's range and also placed from a `draw` hook registered as a uPlot plugin; `Chart.redraw()` only moves that line and never re-strokes the series. App.tsx sizes the charts from a `ResizeObserver` on their container: they are built the first time it has a width (a collapsed `<details>` has none) and resized, debounced, when it changes. The histogram counts moving speeds only (>= 5 km/h) and caps its axis at the 99th percentile so GPS spikes don't flatten it.
 
 ### Config (`src/config.ts`)
 

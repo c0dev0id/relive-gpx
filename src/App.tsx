@@ -15,6 +15,8 @@ import { config } from "./config";
 // compact-layout media query in styles.css.
 const COMPACT_QUERY = "(max-width: 640px), (max-height: 500px)";
 
+const CHART_HEIGHT = 108;
+
 export default function App() {
   const pb = createPlayback();
   const [error, setError] = createSignal("");
@@ -24,7 +26,6 @@ export default function App() {
   const [dragOver, setDragOver] = createSignal(false);
 
   let mapContainer!: HTMLDivElement;
-  let chartsPanel!: HTMLDetailsElement;
   let chartsContainer!: HTMLDivElement;
   let replay: ReplayMap | undefined;
   let charts: Chart[] = [];
@@ -61,7 +62,6 @@ export default function App() {
         setNotice("No timestamps in file — replaying at a synthetic 1 Hz.");
       pb.load(track);
       replay?.setTrack(track);
-      buildCharts(track);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -69,25 +69,41 @@ export default function App() {
     }
   }
 
-  function buildCharts(track: Track) {
-    charts.forEach((c) => c.destroy());
-    charts = [];
-    chartsContainer.innerHTML = "";
-    // A collapsed panel has no width to size the charts to; they are built
-    // when it opens instead.
-    if (!chartsPanel.open) return;
+  // The charts follow their container's width: they are built the first time it
+  // has one (its panel is open; a collapsed panel has none) and resized when it
+  // changes. The work runs outside the observer callback because building
+  // changes the container's height, which the observer would otherwise report
+  // again within the same frame.
+  let chartsWidth = 0;
+  let chartsTimer = 0;
+  const chartsObserver = new ResizeObserver(([entry]) => {
+    const track = pb.track();
+    const width = Math.floor(entry.contentRect.width);
+    if (!track || width === 0 || width === chartsWidth) return;
+    chartsWidth = width;
+    const build = charts.length === 0;
+    clearTimeout(chartsTimer);
+    chartsTimer = window.setTimeout(
+      () => {
+        if (build) buildCharts(track, width);
+        else for (const c of charts) c.resize(width, CHART_HEIGHT);
+      },
+      build ? 0 : 150, // debounce resizes while the window is being dragged
+    );
+  });
+  onCleanup(() => {
+    chartsObserver.disconnect();
+    clearTimeout(chartsTimer);
+  });
+
+  function buildCharts(track: Track, width: number) {
     // Vertical stack: every chart spans the panel's inner width.
-    const each = Math.max(220, chartsContainer.clientWidth - 24);
-    const h = 108;
     charts = [
-      elevationChart(track, each, h, () => cursor.distKm),
-      speedChart(track, each, h, () => cursor.t),
-      speedHistogram(track, each, h),
+      elevationChart(track, width, CHART_HEIGHT, () => cursor.distKm),
+      speedChart(track, width, CHART_HEIGHT, () => cursor.t),
+      speedHistogram(track, width, CHART_HEIGHT),
     ];
     for (const c of charts) chartsContainer.appendChild(c.el);
-    // Show the cursor immediately after a rebuild (e.g. resize while paused).
-    charts[0]?.redraw();
-    charts[1]?.redraw();
   }
 
   // Drive the map + telemetry + chart cursors off the playback clock.
@@ -107,19 +123,6 @@ export default function App() {
 
   createEffect(() => {
     if (replay) replay.follow = follow();
-  });
-
-  let resizeTimer = 0;
-  onMount(() => {
-    const onResize = () => {
-      clearTimeout(resizeTimer);
-      resizeTimer = window.setTimeout(() => {
-        const track = pb.track();
-        if (track) buildCharts(track);
-      }, 150);
-    };
-    window.addEventListener("resize", onResize);
-    onCleanup(() => window.removeEventListener("resize", onResize));
   });
 
   const speeds = [1, 2, 4, 8];
@@ -273,19 +276,15 @@ export default function App() {
               </div>
 
               <div class="panels">
-                <details
-                  class="panel charts-panel"
-                  ref={chartsPanel}
-                  open={panelsStartOpen}
-                  onToggle={() => {
-                    // Charts are only built while the panel is open (see
-                    // buildCharts), so opening it builds them if needed.
-                    if (chartsPanel.open && charts.length === 0)
-                      buildCharts(track);
-                  }}
-                >
+                <details class="panel charts-panel" open={panelsStartOpen}>
                   <summary>Charts</summary>
-                  <div class="charts" ref={chartsContainer} />
+                  <div
+                    class="charts"
+                    ref={(el) => {
+                      chartsContainer = el;
+                      chartsObserver.observe(el);
+                    }}
+                  />
                 </details>
 
                 <details class="panel legend" open={panelsStartOpen}>
