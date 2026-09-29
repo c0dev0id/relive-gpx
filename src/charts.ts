@@ -51,8 +51,7 @@ export function elevationChart(
     ],
     plugins: [],
   };
-  const u = new uPlot(opts, [xs, ys as number[]], undefined);
-  return chartHandle(u, getDistKm);
+  return makeChart(opts, [xs, ys as number[]], getDistKm);
 }
 
 export function speedChart(
@@ -84,8 +83,7 @@ export function speedChart(
     ],
     plugins: [],
   };
-  const u = new uPlot(opts, [xs, ys], undefined);
-  return chartHandle(u, getTimeSec);
+  return makeChart(opts, [xs, ys], getTimeSec);
 }
 
 // Below this the rider is stopped or maneuvering, not riding. Those samples
@@ -132,30 +130,37 @@ export function speedHistogram(track: Track, w: number, h: number): Chart {
     ],
     plugins: [],
   };
-  const u = new uPlot(opts, [centers, bins], undefined);
-  return chartHandle(u);
+  return makeChart(opts, [centers, bins]);
 }
 
-// The playback cursor is a DOM line over the plot area, not a canvas draw, so
-// moving it every frame is a single style write instead of a full re-stroke of
-// the (dense) series. getX returns the cursor's x-axis value each frame.
-function chartHandle(u: uPlot, getX?: () => number): Chart {
-  let cursor: HTMLDivElement | undefined;
-  if (getX) {
-    cursor = document.createElement("div");
-    Object.assign(cursor.style, {
-      position: "absolute",
-      top: "0",
-      bottom: "0",
-      width: "0",
-      borderLeft: "1.5px solid #ffd60a",
-      pointerEvents: "none",
-      display: "none",
-    });
-    u.over.appendChild(cursor);
-  }
-  const moveCursor = () => {
-    if (!cursor || !getX) return;
+// Creates a uPlot chart. With getX it also shows the playback cursor: a DOM line
+// over the plot area, not a canvas draw, so moving it every frame is a single
+// style write instead of a full re-stroke of the (dense) series. getX returns
+// the cursor's x-axis value.
+function makeChart(
+  opts: uPlot.Options,
+  data: uPlot.AlignedData,
+  getX?: () => number,
+): Chart {
+  const handle = (u: uPlot, redraw = () => {}): Chart => ({
+    el: u.root,
+    redraw,
+    resize: (w, h) => u.setSize({ width: w, height: h }),
+    destroy: () => u.destroy(),
+  });
+  if (!getX) return handle(new uPlot(opts, data));
+
+  const cursor = document.createElement("div");
+  Object.assign(cursor.style, {
+    position: "absolute",
+    top: "0",
+    bottom: "0",
+    width: "0",
+    borderLeft: "1.5px solid #ffd60a",
+    pointerEvents: "none",
+    display: "none",
+  });
+  const moveCursor = (u: uPlot) => {
     const x = getX();
     // Hide the line outside the plotted range. The range is unset until uPlot's
     // first draw.
@@ -167,14 +172,13 @@ function chartHandle(u: uPlot, getX?: () => number): Chart {
     cursor.style.display = "";
     cursor.style.transform = `translateX(${u.valToPos(x, "x")}px)`;
   };
-  // uPlot lays out and draws in a microtask after construction, and again after
-  // a resize; reposition the line after each draw instead of waiting for the
-  // next playback update, which never comes while paused.
-  if (getX) u.hooks.draw = [...(u.hooks.draw ?? []), moveCursor];
-  return {
-    el: u.root,
-    redraw: moveCursor,
-    resize: (w, h) => u.setSize({ width: w, height: h }),
-    destroy: () => u.destroy(),
-  };
+  // uPlot sets its scales and size in a microtask after construction and again
+  // after a resize. Placing the line from its draw hook keeps it right even
+  // while playback is paused and no per-frame redraw() comes.
+  const u = new uPlot(
+    { ...opts, plugins: [...(opts.plugins ?? []), { hooks: { draw: moveCursor } }] },
+    data,
+  );
+  u.over.appendChild(cursor);
+  return handle(u, () => moveCursor(u));
 }
