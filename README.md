@@ -1,21 +1,46 @@
 # live-gpx
 
-A static, client-only single-page app that replays a recorded GPX track on a 3D
-MapLibre map. It follows the rider with a chase camera, draws a speed-colored
-trail, and shows uPlot telemetry charts for speed and elevation.
+Replay a recorded GPX track on a 3D map, with a chase camera that follows the
+rider and telemetry charts alongside. For anyone who wants to re-watch a ride,
+run, or route in the browser — no account, no upload, nothing leaves the page.
+
+<!-- Add a screenshot or short GIF of a replay here; it carries this README. -->
+
+## Features
+
+- **3D chase camera** — The map tilts and follows the rider, pacing the camera to the track.
+- **Speed-colored trail** — The route is tinted by speed; a moving boundary reveals it as playback advances.
+- **Telemetry panel** — Live speed, altitude, distance, time, and heart rate / power when the file has them.
+- **Charts** — uPlot speed and elevation plots with a cursor tied to the replay.
+- **Variable speed** — Play at 1×, 2×, 4×, or 8×.
+- **Drop-in** — Drag a GPX file onto the page, or pick one. Routes without timing get synthetic 1 Hz timing.
+- **Keyless hosting** — Uses public Esri imagery, so it runs as a static page with no API keys.
+
+## Getting started
+
+1. `npm ci` — install dependencies.
+2. `npm run dev` — start the Vite dev server.
+3. Open the printed URL and drop a GPX file on the page.
+
+No file handy? Drop `examples/sample-4hz.gpx` to try it.
+
+## Keyboard shortcuts
+
+| Key          | Action              |
+| ------------ | ------------------- |
+| Space        | Play / pause        |
+| ← / →        | Seek 5 s back / forward |
+| ↑ / ↓        | Zoom in / out       |
+
+## Commands
+
+| Command         | What it does                         |
+| --------------- | ------------------------------------ |
+| `npm run dev`   | Start the dev server                 |
+| `npm run build` | Type-check, then build to `dist/`    |
+| `npm test`      | Run the parser and sampler tests     |
+| `npm run sample`| Regenerate `examples/sample-4hz.gpx` |
 
 ## Stack
 
 Solid.js, MapLibre GL 5, uPlot, Vite 6, strict TypeScript.
-
-## Usage
-
-```sh
-npm ci          # install
-npm run dev     # start the Vite dev server
-npm run build   # type-check and build to dist/
-npm test        # run the parser and sampler tests
-```
-
-Load a GPX file in the running app to replay it. `examples/sample-4hz.gpx` is a
-deterministic sample to try it with.
