@@ -16,14 +16,6 @@ run, or route in the browser — no account, no upload, nothing leaves the page.
 - **Drop-in** — Drag a GPX file onto the page, or pick one. Routes without timing get synthetic 1 Hz timing.
 - **Keyless hosting** — Uses public Esri imagery, so it runs as a static page with no API keys.
 
-## Getting started
-
-1. `npm ci` — install dependencies.
-2. `npm run dev` — start the Vite dev server.
-3. Open the printed URL and drop a GPX file on the page.
-
-No file handy? Drop `examples/sample-4hz.gpx` to try it.
-
 ## Keyboard shortcuts
 
 | Key          | Action              |
@@ -31,16 +23,3 @@ No file handy? Drop `examples/sample-4hz.gpx` to try it.
 | Space        | Play / pause        |
 | ← / →        | Seek 5 s back / forward |
 | ↑ / ↓        | Zoom in / out       |
-
-## Commands
-
-| Command         | What it does                         |
-| --------------- | ------------------------------------ |
-| `npm run dev`   | Start the dev server                 |
-| `npm run build` | Type-check, then build to `dist/`    |
-| `npm test`      | Run the parser and sampler tests     |
-| `npm run sample`| Regenerate `examples/sample-4hz.gpx` |
-
-## Stack
-
-Solid.js, MapLibre GL 5, uPlot, Vite 6, strict TypeScript.
