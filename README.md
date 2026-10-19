@@ -1,4 +1,4 @@
-# live-gpx
+![live-gpx](docs/banner.svg)
 
 Replay a recorded GPX track on a 3D map, with a chase camera that follows the
 rider and telemetry charts alongside. For anyone who wants to re-watch a ride,
